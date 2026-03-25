@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>GPT 대화 챗봇 예시</title>
+    <style>
+        body { font-family: Arial; background: #f6f8fa; }
+        #chatbox { width: 400px; margin: 30px auto; background: #fff; border-radius: 12px; box-shadow: 0 6px 18px rgba(0,0,0,.06); padding: 25px; }
+        #msgs { height: 300px; overflow-y: auto; margin-bottom: 15px; border: 1px solid #eee; padding: 10px; background: #fafbfc; }
+        .msg-user { color: #3b82f6; margin-bottom: 8px; }
+        .msg-gpt { color: #222; margin-bottom: 12px; }
+        #user-input { width: 80%; padding: 10px; }
+        #send-btn { padding: 10px 18px; background: #3498db; color: #fff; border: none; border-radius: 5px; cursor: pointer;}
+    </style>
+</head>
+<body>
+    <div id="chatbox">
+        <h2>GPT 대화 챗봇</h2>
+        <div id="msgs"></div>
+        <input type="text" id="user-input" placeholder="메시지를 입력하세요...">
+        <button id="send-btn">전송</button>
+    </div>
+<script>
+const msgs = document.getElementById('msgs');
+const input = document.getElementById('user-input');
+const btn = document.getElementById('send-btn');
+
+btn.onclick = async () => {
+    const userMsg = input.value.trim();
+    if (userMsg === "") return;
+    msgs.innerHTML += `<div class='msg-user'><b>나:</b> ${userMsg}</div>`;
+    input.value = '';
+    const resp = await fetch('/chat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message: userMsg})
+    });
+    const data = await resp.json();
+    msgs.innerHTML += `<div class='msg-gpt'><b>GPT:</b> ${data.response}</div>`;
+    msgs.scrollTop = msgs.scrollHeight;
+};
+input.addEventListener("keyup", e => { if (e.key === "Enter") btn.click(); });
+</script>
+</body>
+</html>
