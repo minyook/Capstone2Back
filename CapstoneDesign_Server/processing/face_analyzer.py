@@ -1,15 +1,32 @@
-import mediapipe as mp
-from mediapipe.tasks import python
-from mediapipe.tasks.python import vision
-import cv2
-import numpy as np
+from __future__ import annotations
+
 import os
 from pathlib import Path
 
+import numpy as np
+
+try:
+    import cv2  # type: ignore
+    import mediapipe as mp  # type: ignore
+    from mediapipe.tasks import python  # type: ignore
+    from mediapipe.tasks.python import vision  # type: ignore
+
+    _MP_AVAILABLE = True
+except Exception:
+    cv2 = None  # type: ignore
+    mp = None  # type: ignore
+    python = None  # type: ignore
+    vision = None  # type: ignore
+    _MP_AVAILABLE = False
 # MediaPipe 설정
-FaceLandmarker = vision.FaceLandmarker
-FaceLandmarkerOptions = vision.FaceLandmarkerOptions
-VisionRunningMode = vision.RunningMode
+if _MP_AVAILABLE:
+    FaceLandmarker = vision.FaceLandmarker
+    FaceLandmarkerOptions = vision.FaceLandmarkerOptions
+    VisionRunningMode = vision.RunningMode
+else:
+    FaceLandmarker = None
+    FaceLandmarkerOptions = None
+    VisionRunningMode = None
 
 face_landmarker_instance = None
 
@@ -20,6 +37,8 @@ MODEL_PATH = BASE_DIR / "face_landmarker.task"
 def setup_face_landmarker():
     """MediaPipe 모델을 로드합니다."""
     global face_landmarker_instance
+    if not _MP_AVAILABLE:
+        return None
     if face_landmarker_instance:
         return face_landmarker_instance
 
@@ -84,9 +103,13 @@ def analyze_image(image_path: str) -> dict:
     """task_manager에서 호출하는 핵심 함수입니다."""
     landmarker = setup_face_landmarker()
     if not landmarker:
+        if not _MP_AVAILABLE:
+            return {"error": "mediapipe 미설치(가상환경에 mediapipe가 없음)"}
         return {"error": "모델 미로드"}
     
     try:
+        if cv2 is None or mp is None:
+            return {"error": "mediapipe/cv2 초기화 실패"}
         image_bgr = cv2.imread(image_path)
         if image_bgr is None:
             return {"error": "이미지 읽기 실패"}

@@ -3,7 +3,7 @@ import time as timer
 import traceback
 
 # 모든 처리 모듈 임포트
-from processing.video_analyzer import extract_all_frames, extract_audio, analyze_frame_yolo
+from processing.video_analyzer import extract_all_frames, extract_audio, analyze_frame_vision
 from processing.audio_analyzer import transcribe_audio_with_timestamps, analyze_prosody_for_segments
 from processing.data_combiner import align_data
 from utils.helpers import cleanup_dirs
@@ -38,24 +38,34 @@ def run_analysis_task(job_id: str, video_path: Path, frame_dir: Path, video_dir:
         if not frame_paths: raise Exception("비디오 프레임 추출 실패.")
         total_frames = len(frame_paths)
         
-        # 3. 🌟 YOLO 실시간 분석 및 터미널 출력
-        print(f"\n[3/6] 👀 실시간 YOLO 포즈/표정 데이터 추출 시작...")
+        # 3. YOLO(제스처) + MediaPipe(표정/시선) 실시간 분석 및 터미널 출력
+        print(f"\n[3/6] 👀 실시간 제스처(YOLO) + 표정/시선(MediaPipe) 데이터 추출 시작...")
         for i, path in enumerate(frame_paths):
-            data = analyze_frame_yolo(str(path))
             current_time = i / FRAME_RATE
-            data["time"] = current_time
-            all_vision_results.append(data)
+            frame = analyze_frame_vision(str(path), current_time)
+            all_vision_results.append(frame)
             
             # 가시성 업데이트
-            if data["has_face"]: max_visibility["face"] = True
-            if data["has_pelvis"]: max_visibility["pelvis"] = True
-            if data["has_ankles"]: max_visibility["ankles"] = True
+            if frame.face.has_face:
+                max_visibility["face"] = True
+            if frame.yolo.has_pelvis:
+                max_visibility["pelvis"] = True
+            if frame.yolo.has_ankles:
+                max_visibility["ankles"] = True
             
             # 터미널 출력 (기존 스타일 유지)
-            if "error" not in data:
-                print(f"  > [{current_time:5.1f}s] YOLO | 얼굴:{data['has_face']} 골반:{data['has_pelvis']} 발목:{data['has_ankles']}")
+            if frame.face.error is None:
+                print(
+                    f"  > [{current_time:5.1f}s] "
+                    f"YOLO(제스처) | 골반:{frame.yolo.has_pelvis} 발목:{frame.yolo.has_ankles} "
+                    f"| MediaPipe(얼굴) | 얼굴:{frame.face.has_face}"
+                )
             else:
-                print(f"  > [{current_time:5.1f}s] ⚠️ 얼굴/사람 미검출")
+                print(
+                    f"  > [{current_time:5.1f}s] ⚠️ "
+                    f"MediaPipe 얼굴/시선 미검출 또는 비활성 ({frame.face.error}) "
+                    f"| YOLO(제스처) 골반:{frame.yolo.has_pelvis} 발목:{frame.yolo.has_ankles}"
+                )
 
         # 4 & 5. Whisper 및 Praat 음성 분석
         job_status[job_id] = {"status": "Analyzing", "message": "4/6: 로컬 음성 인식 실행 중..."}
@@ -100,10 +110,11 @@ def run_analysis_task(job_id: str, video_path: Path, frame_dir: Path, video_dir:
         print(llama_feedback)
         print(f"{'='*60}")
 
+        raw_data_json = [f.to_dict() for f in all_vision_results]
         final_result = {
             "video_type": video_type.value,
             "llama_feedback": llama_feedback,
-            "raw_data": all_vision_results,
+            "raw_data": raw_data_json,
             "aligned_transcript_data": aligned_data
         }
         

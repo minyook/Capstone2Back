@@ -1,6 +1,8 @@
 # [신규 파일] processing/data_combiner.py
 import numpy as np
 
+from processing.vision_dto import FrameVisionResult
+
 def align_data(vision_data: list, audio_segments: list) -> list:
     """
     문장(audio_segments)별로 해당 시간대의 평균 시선/표정(vision_data) 및
@@ -9,8 +11,12 @@ def align_data(vision_data: list, audio_segments: list) -> list:
     print(f"   > [6/6] 데이터 정렬 시작...")
     aligned_results = []
     
-    # 얼굴이 검출된 유효한 프레임만 필터링
-    valid_vision_data = [frame for frame in vision_data if "error" not in frame]
+    # 얼굴이 유효한 프레임만 필터링
+    valid_vision_data: list[FrameVisionResult] = [
+        frame
+        for frame in vision_data
+        if isinstance(frame, FrameVisionResult) and frame.face.error is None and frame.face.has_face
+    ]
     if not valid_vision_data:
         # 얼굴 데이터가 아예 없어도 텍스트와 운율 데이터는 반환
         pass
@@ -37,22 +43,22 @@ def align_data(vision_data: list, audio_segments: list) -> list:
         # 3. (기존) 시선/표정 데이터 평균 계산
         frames_in_segment = [
             frame for frame in valid_vision_data 
-            if frame['time'] >= start_time and frame['time'] <= end_time
+            if frame.time >= start_time and frame.time <= end_time
         ]
 
         if not frames_in_segment:
             avg_vision = {"error": "얼굴 미검출"}
         else:
             avg_vision = {
-                "smile": round(sum(f['smile'] for f in frames_in_segment) / len(frames_in_segment), 3),
-                "frown": round(sum(f['frown'] for f in frames_in_segment) / len(frames_in_segment), 3),
-                "brow_up": round(sum(f['brow_up'] for f in frames_in_segment) / len(frames_in_segment), 3),
-                "brow_down": round(sum(f['brow_down'] for f in frames_in_segment) / len(frames_in_segment), 3),
-                "jaw_open": round(sum(f['jaw_open'] for f in frames_in_segment) / len(frames_in_segment), 3),
-                "mouth_open": round(sum(f['mouth_open'] for f in frames_in_segment) / len(frames_in_segment), 3),
-                "squint": round(sum(f['squint'] for f in frames_in_segment) / len(frames_in_segment), 3),
-                "gaze_h": round(sum(f['gaze_h'] for f in frames_in_segment) / len(frames_in_segment), 3),
-                "gaze_v": round(sum(f['gaze_v'] for f in frames_in_segment) / len(frames_in_segment), 3),
+                "smile": round(sum(f.face.smile for f in frames_in_segment) / len(frames_in_segment), 3),
+                "frown": round(sum(f.face.frown for f in frames_in_segment) / len(frames_in_segment), 3),
+                "brow_up": round(sum(f.face.brow_up for f in frames_in_segment) / len(frames_in_segment), 3),
+                "brow_down": round(sum(f.face.brow_down for f in frames_in_segment) / len(frames_in_segment), 3),
+                "jaw_open": round(sum(f.face.jaw_open for f in frames_in_segment) / len(frames_in_segment), 3),
+                "mouth_open": round(sum(f.face.mouth_open for f in frames_in_segment) / len(frames_in_segment), 3),
+                "squint": round(sum(f.face.squint for f in frames_in_segment) / len(frames_in_segment), 3),
+                "gaze_h": round(sum(f.face.gaze_h for f in frames_in_segment) / len(frames_in_segment), 3),
+                "gaze_v": round(sum(f.face.gaze_v for f in frames_in_segment) / len(frames_in_segment), 3),
             }
 
         aligned_results.append({
