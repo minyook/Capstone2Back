@@ -11,7 +11,7 @@ from utils.helpers import cleanup_dirs
 # 🌟 신규 임포트
 from utils.quality_checker import check_video_quality, check_audio_quality
 from schemas.video_type import VideoType
-from core.llama_client import get_llama_feedback
+from core.llama_client import get_feedback_from_coach
 from core.exceptions import QualityException
 
 FRAME_RATE = 5
@@ -38,8 +38,8 @@ def run_analysis_task(job_id: str, video_path: Path, frame_dir: Path, video_dir:
         if not frame_paths: raise Exception("비디오 프레임 추출 실패.")
         total_frames = len(frame_paths)
         
-        # 3. YOLO(제스처) + MediaPipe(표정/시선) 실시간 분석 및 터미널 출력
-        print(f"\n[3/6] 👀 실시간 제스처(YOLO) + 표정/시선(MediaPipe) 데이터 추출 시작...")
+        # 3. YOLO(제스처) + MediaPipe(표정/시선) 실시간 분석
+        print(f"\n[3/6] 👀 시각 데이터(YOLO & MediaPipe) 추출 중... (터미널 출력 생략)")
         for i, path in enumerate(frame_paths):
             current_time = i / FRAME_RATE
             frame = analyze_frame_vision(str(path), current_time)
@@ -48,24 +48,14 @@ def run_analysis_task(job_id: str, video_path: Path, frame_dir: Path, video_dir:
             # 가시성 업데이트
             if frame.face.has_face:
                 max_visibility["face"] = True
-            if frame.yolo.has_pelvis:
+            if "골반" in frame.yolo.detected_parts:
                 max_visibility["pelvis"] = True
-            if frame.yolo.has_ankles:
+            if "발/다리" in frame.yolo.detected_parts:
                 max_visibility["ankles"] = True
             
-            # 터미널 출력 (기존 스타일 유지)
-            if frame.face.error is None:
-                print(
-                    f"  > [{current_time:5.1f}s] "
-                    f"YOLO(제스처) | 골반:{frame.yolo.has_pelvis} 발목:{frame.yolo.has_ankles} "
-                    f"| MediaPipe(얼굴) | 얼굴:{frame.face.has_face}"
-                )
-            else:
-                print(
-                    f"  > [{current_time:5.1f}s] ⚠️ "
-                    f"MediaPipe 얼굴/시선 미검출 또는 비활성 ({frame.face.error}) "
-                    f"| YOLO(제스처) 골반:{frame.yolo.has_pelvis} 발목:{frame.yolo.has_ankles}"
-                )
+            # 🗑️ (여기에 있던 길고 긴 print() 두 개를 지웠습니다. 이제 터미널이 조용해집니다!)
+            
+        print(f"  > ✅ 시각 데이터 추출 완료.")
 
         # 4 & 5. Whisper 및 Praat 음성 분석
         job_status[job_id] = {"status": "Analyzing", "message": "4/6: 로컬 음성 인식 실행 중..."}
@@ -104,7 +94,7 @@ def run_analysis_task(job_id: str, video_path: Path, frame_dir: Path, video_dir:
         위 데이터를 바탕으로 발표자에게 적절한 자세와 목소리 톤에 대한 조언을 작성하세요.
         """
         
-        llama_feedback = get_llama_feedback(llama_prompt)
+        llama_feedback = get_feedback_from_coach(llama_prompt)
         
         print(f"\n{'='*20} 🤖 LLaMA 발표 코치 피드백 {'='*20}")
         print(llama_feedback)

@@ -17,88 +17,109 @@ function newId(): string {
     : `m-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-/** 데모: 실제 PPT 파싱 대신 구조·발표 관점 피드백 템플릿 */
+/** 데모: PPT는 일단 기존 가짜 피드백 유지 (추후 서버 연동) */
 function pptFeedbackDemo(fileName: string): string {
-  return `「${fileName}」을(를) 받았습니다. (현재는 파일 내용을 읽지 않고, 일반적인 발표 피드백을 드립니다. 백엔드와 연동하면 슬라이드별 분석이 가능합니다.)
-
-• 슬라이드 구조: 도입(문제·목표) → 본론(근거·절차) → 결론(요약·다음 단계)처럼 한 슬라이드에 메시지가 하나씩 드러나는지 확인해 보세요.
-• 분량: 발표 시간을 정했다면 슬라이드 수·글머리 수가 시간에 맞는지(슬라이드당 1~2분 등) 점검이 필요합니다.
-• 말과 PPT: 슬라이드의 글은 키워드 위주로 두고, 설명은 말로 풀면 ‘내용·논리’ 채점에 유리합니다.
-• 시각: 그래프·표는 축·단위를 크게, 한 슬라이드에 정보가 과하지 않은지 봐 주세요.
-
-더 구체적으로 다듬고 싶으면 어떤 발표인지(과제·캡스톤·영어 등)와 분량을 알려 주세요.`;
-}
-
-/** 데모: 질문에 대한 짧은 코칭형 답변 */
-function questionFeedbackDemo(q: string): string {
-  const t = q.trim();
-  if (!t) return "무엇이든 물어보세요. 발표 구성, 말하기, 긴장, 시간 배분 등에 대해 피드백 드릴게요.";
-
-  if (/시간|분량|몇 분/i.test(t)) {
-    return `시간·분량은 미리 연습하면서 맞추는 게 가장 정확합니다. 초안 기준으로는 전체를 도입 10~15% · 본론 70~75% · 결론 10~15% 정도로 나눠 보고, 슬라이드 수가 많으면 슬라이드당 1~2분을 상한으로 잡아 보세요. 실제로는 “한 장에 말할 내용이 몇 문장인지”를 줄이는 게 효과적입니다.`;
-  }
-  if (/긴장|떨림|목소리/i.test(t)) {
-    return `긴장·목소리는 호흡과 속도가 핵심입니다. 첫 문장을 짧게, 천천히 시작해 보세요. 시선은 한 사람씩 천천히 옮기면 ‘태도·음성’ 채점에서도 안정적으로 보입니다. 필요하면 발표 평가 화면에서 녹화 후 다시 들어 보는 것도 좋습니다.`;
-  }
-  if (/ppt|슬라이드|자료/i.test(t)) {
-    return `PPT는 청자가 따라오기 쉬운 한 슬라이드 한 메시지가 좋습니다. 긴 문단 대신 글머리·도식을 쓰고, 발표자 노트에만 상세 설명을 두면 말과 슬라이드가 어긋나지 않습니다. 파일을 올리면 구성·분량 쪽 피드백을 더 구체화할 수 있어요.`;
-  }
-
-  return `질문해 주셔서 감사합니다. 「${t.slice(0, 80)}${t.length > 80 ? "…" : ""}」에 대해 발표·채점 관점에서 정리해 보면:
-
-• 내용: 주장이 한 문장으로 요약되는지, 근거(데이터·사례)가 붙어 있는지
-• 전개: 도입에서 왜 이 주제인지, 본론에서 어떻게 풀었는지, 결론에서 무엇을 남길지
-• 전달: 핵심 용어 설명, 시간 안에 끝나는지, 슬라이드와 말이 맞는지
-
-를 점검해 보시면 좋습니다. 원하시면 PPT를 올려 주시면 구성 피드백을 같이 맞춰 드릴게요.`;
+  return `「${fileName}」을(를) 받았습니다. (현재는 파일 내용을 읽지 않고, 일반적인 발표 피드백을 드립니다. 나중에 백엔드와 연동하면 슬라이드별 분석이 가능합니다.)\n\n• 슬라이드 구조: 도입(문제·목표) → 본론(근거·절차) → 결론(요약·다음 단계)처럼 한 슬라이드에 메시지가 하나씩 드러나는지 확인해 보세요.`;
 }
 
 export function Chatbot() {
   const uploadId = useId();
   const bodyRef = useRef<HTMLDivElement>(null);
   const [text, setText] = useState("");
+  const [isLoading, setIsLoading] = useState(false); // 🌟 로딩 상태 추가
+
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
     {
-      id: newId(),
+      id: "welcome-msg",
       role: "bot",
-      text:
-        "PPT를 올리면 구성·분량·전달 쪽 피드백을 드리고, 궁금한 점을 물어보면 발표·채점 관점에서 답을 드릴 수 있어요. 위의 ‘PPT 올리기’에서 파일을 선택하거나, 아래에 메시지를 입력해 보세요.",
+      text: "안녕하세요! 발표 준비를 돕는 AI 코치입니다. 발표 구성, 대본 작성, 긴장감 해소 등 궁금한 점을 편하게 물어보세요!",
     },
   ]);
 
+  // 채팅이 추가될 때마다 스크롤 맨 아래로 이동
   useEffect(() => {
     const el = bodyRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages]);
+  }, [messages, isLoading]);
 
-  function appendUserAndBot(userText: string, botText: string, isPptUpload?: boolean) {
-    setMessages((prev) => [
-      ...prev,
-      { id: newId(), role: "user", text: userText, isPptUpload },
-      { id: newId(), role: "bot", text: botText },
-    ]);
-  }
-
+  // PPT 파일 처리 (기존 유지)
   function handlePptFiles(files: FileList | null) {
     const file = files?.[0];
     if (!file) return;
     const lower = file.name.toLowerCase();
     const ok = lower.endsWith(".ppt") || lower.endsWith(".pptx");
     if (!ok) {
-      appendUserAndBot(
-        `${file.name} 업로드 시도`,
-        "`.ppt` 또는 `.pptx` 파일만 지원합니다. PowerPoint에서 다시 저장해 올려 주세요."
-      );
+      setMessages((prev) => [
+        ...prev,
+        { id: newId(), role: "user", text: `${file.name} 업로드 시도` },
+        { id: newId(), role: "bot", text: "`.ppt` 또는 `.pptx` 파일만 지원합니다." },
+      ]);
       return;
     }
-    appendUserAndBot(`PPT 업로드: ${file.name}`, pptFeedbackDemo(file.name), true);
+    setMessages((prev) => [
+      ...prev,
+      { id: newId(), role: "user", text: `PPT 업로드: ${file.name}`, isPptUpload: true },
+      { id: newId(), role: "bot", text: pptFeedbackDemo(file.name) },
+    ]);
   }
 
-  function handleSend() {
+  // 🌟 [핵심] 실제 백엔드 API와 통신하는 함수
+  async function handleSend() {
     const t = text.trim();
-    if (!t) return;
-    setText("");
-    appendUserAndBot(t, questionFeedbackDemo(t));
+    if (!t || isLoading) return; // 빈 칸이거나 로딩 중이면 무시
+    
+    setText(""); // 입력창 초기화
+
+    // 1. 사용자 메시지 화면에 먼저 즉시 표시
+    setMessages((prev) => [
+      ...prev,
+      { id: newId(), role: "user", text: t }
+    ]);
+    setIsLoading(true);
+
+    try {
+      // 2. 현재까지의 채팅 기록을 백엔드 LLaMA 양식으로 변환
+      // (프론트엔드의 'bot'을 백엔드의 'assistant'로 이름만 바꿔줍니다)
+      const historyForBackend = messages
+        .filter((m) => m.id !== "welcome-msg") // 첫 환영 인사는 제외
+        .map((m) => ({
+          role: m.role === "bot" ? "assistant" : "user",
+          content: m.text,
+        }));
+
+      // 3. FastAPI 백엔드로 POST 요청 보내기
+      const res = await fetch("http://127.0.0.1:8000/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: t,
+          chat_history: historyForBackend,
+        }),
+      });
+
+      if (!res.ok) throw new Error("서버 응답 오류");
+
+      const data = await res.json();
+      
+      // 4. 백엔드가 준 최신 대화 기록에서 AI의 마지막 답변만 가져오기
+      const updatedHistory = data.chat_history;
+      const lastAiMessage = updatedHistory[updatedHistory.length - 1];
+
+      // 5. 화면에 AI 답변 추가
+      setMessages((prev) => [
+        ...prev,
+        { id: newId(), role: "bot", text: lastAiMessage.content }
+      ]);
+
+    } catch (error) {
+      console.error(error);
+      setMessages((prev) => [
+        ...prev,
+        { id: newId(), role: "bot", text: "서버와 연결할 수 없습니다. (FastAPI 서버가 켜져 있는지 확인해주세요!)" }
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
@@ -147,17 +168,38 @@ export function Chatbot() {
               {m.role === "user" && m.isPptUpload ? (
                 <span className="chatbot-bubble__tag">PPT</span>
               ) : null}
-              <div className="chatbot-bubble__text">{m.text}</div>
+              {/* 줄바꿈 처리를 위해 백틱/엔터를 <br/>로 치환하는 스타일 추가 */}
+              <div className="chatbot-bubble__text" style={{ whiteSpace: "pre-wrap" }}>
+                {m.text}
+              </div>
             </div>
           </div>
         ))}
+        
+        {/* 🌟 로딩 중일 때 표시되는 AI 애니메이션 (가짜 버블) */}
+        {isLoading && (
+          <div className="chatbot-msg">
+            <div className="chatbot-msg__avatar" aria-hidden>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
+                <path d="M12 7v5l3 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            </div>
+            <div className="chatbot-bubble">
+              <div className="chatbot-bubble__text" style={{ fontStyle: "italic", color: "#888" }}>
+                답변을 생성하고 있습니다...
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <footer className="chatbot-inputbar">
         <input
           className="chatbot-input"
-          placeholder="발표가 궁금한 점을 물어보세요 (구성, 긴장, 시간, PPT 등)"
+          placeholder="발표 관련 궁금한 점을 물어보세요!"
           value={text}
+          disabled={isLoading} // 🌟 로딩 중 입력 방지
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
@@ -166,7 +208,13 @@ export function Chatbot() {
             }
           }}
         />
-        <button type="button" className="chatbot-send" aria-label="보내기" onClick={handleSend}>
+        <button 
+          type="button" 
+          className="chatbot-send" 
+          aria-label="보내기" 
+          onClick={handleSend}
+          disabled={isLoading} // 🌟 로딩 중 클릭 방지
+        >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
             <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" fill="currentColor" />
           </svg>

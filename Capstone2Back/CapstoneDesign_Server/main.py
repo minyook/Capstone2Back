@@ -7,6 +7,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.responses import JSONResponse
 
+# 🌟 CORS 및 챗봇 데이터 처리를 위한 추가 임포트
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Dict
+
 from utils.helpers import setup_temp_dirs, create_session_dirs, save_upload_file
 from utils.json_helpers import setup_json_dirs
 from processing.audio_analyzer import load_local_whisper_model
@@ -14,6 +19,8 @@ from processing.task_manager import run_analysis_task, job_status
 
 # 🌟 신규 임포트
 from core.exceptions import QualityException
+# 🌟 챗봇 함수 임포트
+from core.llama_client import chat_with_mentor
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -23,31 +30,17 @@ async def lifespan(app: FastAPI):
         os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
     print("\n" + "="*50)
-    print("🚀 데이터 추출 서버 시작 (자동 분석 모드 / YOLO26 + LLaMA)")
+    print("🚀 Overnight.AI 서버 시작 완료")
     print("="*50)
     
     setup_temp_dirs()
     setup_json_dirs() 
     
     try:
-        # setup_face_landmarker() <- 🗑️ 지움!
         load_local_whisper_model()
+        print("✅ AI 모델 로드 완료! 클라이언트(앱)의 요청을 대기 중입니다...\n")
         
-        # --- 🟢 자동 분석 하드코딩 구간 (유지) ---
-        test_file = BASE_DIR / "adiotest.mp4"
-        if test_file.exists():
-            print(f"\n📦 테스트 파일 발견: {test_file.name}")
-            print("⚙️ 즉시 분석을 시작합니다...\n")
-            
-            video_dir, frame_dir = create_session_dirs()
-            job_id = "AUTO_TEST_001"
-            job_status[job_id] = {"status": "Started"}
-            
-            asyncio.create_task(asyncio.to_thread(
-                run_analysis_task, job_id, test_file, frame_dir, video_dir, []
-            ))
-        else:
-            print(f"\n⚠️ 자동 분석 실패: {test_file.name} 파일이 없습니다.")
+        # 🗑️ (기존에 있던 test_file 자동 분석 코드는 싹 지웠습니다!)
 
     except Exception as e:
         print(f"❌ 초기화 오류: {e}")
@@ -59,6 +52,43 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# ==========================================
+# 🌟 1. CORS 미들웨어 설정 (프론트엔드 연결 허용)
+# ==========================================
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # 프론트엔드(리액트, 앱) 요청 허용
+    allow_credentials=True,
+    allow_methods=["*"], # POST, GET 등 모든 방식 허용
+    allow_headers=["*"],
+)
+
+# ==========================================
+# 🌟 2. 챗봇 API 엔드포인트 및 데이터 모델 세팅
+# ==========================================
+class ChatRequest(BaseModel):
+    message: str
+    chat_history: List[Dict[str, str]] = [] # 이전 대화 기록 보관용
+
+@app.post("/api/chat")
+def chat_with_ai(request: ChatRequest):
+    """
+    프론트엔드(React)에서 사용자의 채팅과 이전 대화 기록을 보내면,
+    LLaMA 챗봇이 문맥을 파악해 답변을 돌려주는 API입니다.
+    """
+    print(f"\n[📱 프론트엔드에서 온 메시지]: {request.message}")
+    
+    # 챗봇 AI에게 메시지와 기록을 던져서 답변 생성
+    updated_history = chat_with_mentor(request.message, request.chat_history)
+    
+    print(f"[🤖 챗봇 AI의 답변]: {updated_history[-1]['content']}\n")
+    
+    # 업데이트된 전체 대화 기록을 프론트엔드로 다시 반환
+    return {"chat_history": updated_history}
+
+# ==========================================
+# 기존 코드 (예외 처리 및 서버 실행)
+# ==========================================
 # 🌟 신규: 커스텀 예외 발생 시 JSON 에러 반환
 @app.exception_handler(QualityException)
 async def quality_exception_handler(request, exc: QualityException):

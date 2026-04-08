@@ -18,6 +18,7 @@ except Exception:
     python = None  # type: ignore
     vision = None  # type: ignore
     _MP_AVAILABLE = False
+
 # MediaPipe 설정
 if _MP_AVAILABLE:
     FaceLandmarker = vision.FaceLandmarker
@@ -50,7 +51,13 @@ def setup_face_landmarker():
         raise FileNotFoundError(f"모델 파일이 없습니다.")
 
     try:
-        base_options = python.BaseOptions(model_asset_path=model_path_str)
+        # 🌟 핵심 수정 부분: 파이썬이 파일을 직접 읽어서 바이트 데이터로 만듭니다! (한글 경로 에러 원천 차단)
+        with open(model_path_str, 'rb') as f:
+            model_data = f.read()
+            
+        # 경로(model_asset_path) 대신 데이터(model_asset_buffer)를 전달합니다.
+        base_options = python.BaseOptions(model_asset_buffer=model_data)
+        
         options = FaceLandmarkerOptions(
             base_options=base_options,
             running_mode=VisionRunningMode.IMAGE,
