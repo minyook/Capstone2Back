@@ -123,3 +123,6 @@ if __name__ == "__main__":
     # --------------핸드폰으로 실행 방법-----------------
     # .\venv\Scripts\activate
     # uvicorn main:app --host 0.0.0.0 --port 8000 (서버 키기)
+
+
+    # python main.py --test_video "adiotest.mp4" 미디어파이프 테스트 명령어
