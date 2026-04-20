@@ -43,8 +43,7 @@ export function Analysis() {
         ) : null}
         {hasData ? (
           <p className="analysis-page-desc">
-            음성·영상을 함께 본 항목별 점수입니다. 필요하면 <strong>가중치</strong>를 조정할 수 있고, 아래에서 PDF·Excel로
-            내보낼 수 있습니다.
+            음성·영상을 함께 본 항목별 점수입니다. 결과를 확인하고 아래에서 PDF·Excel로 내보낼 수 있습니다.
           </p>
         ) : (
           <p className="analysis-page-desc">{emptyDesc}</p>
@@ -90,7 +89,7 @@ export function Analysis() {
             </div>
             <p className="analysis-total__note">
               {hasData
-                ? "발표 내용 · 태도 · 음성 영역 가중 평균 (가중치는 교수 설정에 맞게 조정 가능)"
+                ? "발표 내용 · 태도 · 음성 영역 점수를 종합해 계산한 결과입니다."
                 : "채점 결과가 있으면 종합 점수가 계산됩니다."}
             </p>
           </div>

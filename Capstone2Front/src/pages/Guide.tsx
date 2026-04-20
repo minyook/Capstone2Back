@@ -97,8 +97,8 @@ export function Guide() {
                 💯
               </span>
               <p>
-                종합 점수는 <strong>발표 내용 · 발표 태도 · 발표 음성</strong> 영역에 가중치를 두어 산출하며, PPT와 발화
-                텍스트 비교는 <strong>발표 내용</strong> 영역에 반영됩니다.
+                종합 점수는 <strong>발표 내용 · 발표 태도 · 발표 음성</strong> 영역 점수를 기반으로 산출하며, PPT와 발화
+                텍스트 비교 결과는 <strong>발표 내용</strong> 영역에 반영됩니다.
               </p>
             </div>
           </>

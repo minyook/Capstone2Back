@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useFolders } from "../context/FoldersContext";
+import { listFolderSubmissions } from "../data/folderFilesStorage";
+import { loadScoresForView, totalFromScores } from "../data/analysisResultStorage";
 import "./MyPage.css";
 
 export function MyPage() {
@@ -11,8 +13,12 @@ export function MyPage() {
   const [loggingOut, setLoggingOut] = useState(false);
 
   const folderCount = folders.length;
-  const totalPresentationCount = 0;
-  const gradeACount = 0;
+  const allSubmissions = folders.flatMap((folder) => listFolderSubmissions(folder.id));
+  const totalPresentationCount = allSubmissions.length;
+  const gradeACount = allSubmissions.filter((submission) => {
+    const scores = loadScoresForView(submission.id);
+    return scores ? totalFromScores(scores) >= 90 : false;
+  }).length;
 
   const label = user?.displayName?.trim() || user?.email?.split("@")[0] || "게스트";
   const email = user?.email ?? "로그인이 필요합니다";

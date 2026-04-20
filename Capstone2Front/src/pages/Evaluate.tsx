@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Link, useNavigate } from "react-router-dom";
 
@@ -26,6 +26,131 @@ export function Evaluate() {
   const [pptName, setPptName] = useState<string | null>(null);
 
   const [videoName, setVideoName] = useState<string | null>(null);
+
+  const [isRecording, setIsRecording] = useState(false);
+
+  const [cameraError, setCameraError] = useState<string>("");
+
+  const [recordedVideoUrl, setRecordedVideoUrl] = useState<string | null>(null);
+
+  const [recordedVideoName, setRecordedVideoName] = useState<string | null>(null);
+
+  const previewRef = useRef<HTMLVideoElement | null>(null);
+
+  const streamRef = useRef<MediaStream | null>(null);
+
+  const recorderRef = useRef<MediaRecorder | null>(null);
+
+  const chunksRef = useRef<Blob[]>([]);
+
+  useEffect(() => {
+    return () => {
+      if (recorderRef.current && recorderRef.current.state !== "inactive") {
+        recorderRef.current.stop();
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+      if (recordedVideoUrl) {
+        URL.revokeObjectURL(recordedVideoUrl);
+      }
+    };
+  }, [recordedVideoUrl]);
+
+  useEffect(() => {
+    const videoEl = previewRef.current;
+    const stream = streamRef.current;
+    if (!videoEl || !stream) return;
+    videoEl.srcObject = stream;
+    videoEl.play().catch(() => {
+      // autoplay 정책으로 인해 실패할 수 있어 무시 (사용자 상호작용 후 재생됨)
+    });
+  }, [isRecording]);
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (previewRef.current) {
+      previewRef.current.srcObject = null;
+    }
+  };
+
+  const handleRecordToggle = async () => {
+    if (isRecording) {
+      recorderRef.current?.stop();
+      return;
+    }
+
+    setCameraError("");
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError("이 브라우저는 카메라 접근을 지원하지 않습니다.");
+      return;
+    }
+
+    if (typeof MediaRecorder === "undefined") {
+      setCameraError("이 브라우저는 녹화(MediaRecorder)를 지원하지 않습니다.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
+      streamRef.current = stream;
+
+      const recorder = new MediaRecorder(stream);
+      recorderRef.current = recorder;
+      chunksRef.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        setIsRecording(false);
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "video/webm" });
+        const ext = blob.type.includes("mp4") ? "mp4" : "webm";
+        const stampedName = `recorded-${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
+        setRecordedVideoName(stampedName);
+
+        if (recordedVideoUrl) {
+          URL.revokeObjectURL(recordedVideoUrl);
+        }
+        const url = URL.createObjectURL(blob);
+        setRecordedVideoUrl(url);
+        stopCamera();
+      };
+
+      recorder.start();
+      setIsRecording(true);
+    } catch (error) {
+      console.error(error);
+      setCameraError("카메라/마이크 권한이 없거나 장치에 접근할 수 없습니다.");
+      stopCamera();
+    }
+  };
+
+  const handleSelectRecordedVideo = () => {
+    if (!recordedVideoName) return;
+    setVideoName(recordedVideoName);
+    setStep((s) => (s < 3 ? 3 : s));
+    setCameraError("");
+  };
+
+  const handleRetakeRecordedVideo = () => {
+    if (recordedVideoUrl) {
+      URL.revokeObjectURL(recordedVideoUrl);
+    }
+    setRecordedVideoUrl(null);
+    setRecordedVideoName(null);
+    setCameraError("");
+  };
 
 
 
@@ -248,18 +373,35 @@ export function Evaluate() {
           </p>
 
           <div className="evaluate-preview" role="region" aria-label="카메라 미리보기">
-
-            카메라 미리보기와 녹화는 곧 이 화면에서 이용할 수 있도록 준비 중입니다. 지금은 아래에서 영상 파일을 선택해
-            주세요.
-
+            {recordedVideoUrl && !isRecording ? (
+              <video className="evaluate-preview__video" src={recordedVideoUrl} controls playsInline />
+            ) : (
+              <>
+                <video ref={previewRef} className="evaluate-preview__video" autoPlay muted playsInline />
+                {!isRecording ? (
+                  <p className="evaluate-preview__placeholder">
+                    녹화 시작을 누르면 카메라 미리보기가 켜집니다. 기존 파일을 쓸 경우 아래에서 영상 파일을 선택해 주세요.
+                  </p>
+                ) : null}
+              </>
+            )}
           </div>
+          {recordedVideoUrl && !isRecording ? (
+            <div className="evaluate-preview-actions">
+              <button type="button" className="evaluate-btn evaluate-btn--secondary" onClick={handleRetakeRecordedVideo}>
+                다시 찍기
+              </button>
+              <button type="button" className="evaluate-btn evaluate-btn--primary" onClick={handleSelectRecordedVideo}>
+                이 영상 선택하기
+              </button>
+            </div>
+          ) : null}
+          {cameraError ? <p className="evaluate-note evaluate-note--error">{cameraError}</p> : null}
 
           <div className="evaluate-row">
 
-            <button type="button" className="evaluate-btn evaluate-btn--secondary">
-
-              녹화 시작
-
+            <button type="button" className="evaluate-btn evaluate-btn--secondary" onClick={handleRecordToggle}>
+              {isRecording ? "녹화 중지" : "녹화 시작"}
             </button>
 
             <label className="evaluate-btn evaluate-btn--ghost">
