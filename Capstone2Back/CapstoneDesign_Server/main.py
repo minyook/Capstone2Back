@@ -1,5 +1,6 @@
 import os
 import uvicorn
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 import uuid 
 import asyncio
 from pathlib import Path
