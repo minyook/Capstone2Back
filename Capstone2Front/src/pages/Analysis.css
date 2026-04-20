@@ -70,6 +70,13 @@
   opacity: 0.85;
 }
 
+.analysis-player__video {
+  width: min(100%, 720px);
+  border-radius: var(--radius-md);
+  background: #000;
+  box-shadow: var(--shadow-sm);
+}
+
 .analysis-player--placeholder {
   opacity: 0.92;
 }

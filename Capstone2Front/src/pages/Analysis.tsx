@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { findSubmissionById, submissionPrimaryFileName } from "../data/folderFilesStorage";
 import { loadScoresForView, totalFromScores, type StoredRubricScores } from "../data/analysisResultStorage";
@@ -8,6 +8,7 @@ import "./Analysis.css";
 export function Analysis() {
   const [searchParams] = useSearchParams();
   const submissionId = searchParams.get("submissionId");
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const scores = useMemo<StoredRubricScores | null>(
     () => loadScoresForView(submissionId),
@@ -20,6 +21,17 @@ export function Analysis() {
 
   const hasData = scores !== null;
   const total = useMemo(() => (scores ? totalFromScores(scores) : null), [scores]);
+  const previewVideoUrl = useMemo(() => {
+    if (!submissionId) return null;
+    try {
+      const raw = sessionStorage.getItem("overnight-video-preview-by-submission-v1");
+      if (!raw) return null;
+      const map = JSON.parse(raw) as Record<string, string>;
+      return map[submissionId] ?? null;
+    } catch {
+      return null;
+    }
+  }, [submissionId]);
 
   const emptyDesc =
     submissionId && !hasData
@@ -58,14 +70,29 @@ export function Analysis() {
             type="button"
             className="analysis-play"
             aria-label="재생"
-            disabled={!hasData}
+            disabled={!previewVideoUrl}
+            onClick={() => {
+              if (!previewVideoRef.current) return;
+              previewVideoRef.current.play().catch(() => {
+                /* ignore autoplay/play errors */
+              });
+            }}
           >
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden>
               <path d="M8 5v14l11-7-11-7z" fill="currentColor" />
             </svg>
           </button>
+          {previewVideoUrl ? (
+            <video
+              ref={previewVideoRef}
+              className="analysis-player__video"
+              src={previewVideoUrl}
+              controls
+              playsInline
+            />
+          ) : null}
           <span className="analysis-player__cap">
-            {hasData ? "발표 영상 다시보기" : "채점 완료 후 영상을 연결할 수 있습니다"}
+            {previewVideoUrl ? "발표 영상 다시보기" : "영상 미리보기가 없습니다"}
           </span>
         </div>
 
@@ -150,6 +177,27 @@ export function Analysis() {
               className="analysis-btn analysis-btn--outline"
               disabled={!hasData}
               title={!hasData ? "채점 결과가 있을 때 사용할 수 있습니다" : undefined}
+              onClick={() => {
+                if (!scores) return;
+                const rows = [
+                  ["영역", "세부항목", "점수"].join(","),
+                  ...RUBRIC.flatMap((cat) => {
+                    const data = scores[cat.id];
+                    const itemRows = cat.items.map((label, idx) =>
+                      [cat.title, label, String(data.items[idx] ?? "")].join(",")
+                    );
+                    return [...itemRows, [cat.title, "영역 점수", String(data.category)].join(",")];
+                  }),
+                  ["총점", "", String(totalFromScores(scores))].join(","),
+                ];
+                const blob = new Blob(["\uFEFF" + rows.join("\n")], { type: "text/csv;charset=utf-8;" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `analysis-report-${submissionId ?? "latest"}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
             >
               EXCEL
             </button>
@@ -158,6 +206,9 @@ export function Analysis() {
               className="analysis-btn analysis-btn--fill"
               disabled={!hasData}
               title={!hasData ? "채점 결과가 있을 때 사용할 수 있습니다" : undefined}
+              onClick={() => {
+                window.print();
+              }}
             >
               PDF
             </button>

@@ -35,6 +35,8 @@ export function Evaluate() {
 
   const [recordedVideoName, setRecordedVideoName] = useState<string | null>(null);
 
+  const [selectedVideoPreviewUrl, setSelectedVideoPreviewUrl] = useState<string | null>(null);
+
   const previewRef = useRef<HTMLVideoElement | null>(null);
 
   const streamRef = useRef<MediaStream | null>(null);
@@ -137,8 +139,9 @@ export function Evaluate() {
   };
 
   const handleSelectRecordedVideo = () => {
-    if (!recordedVideoName) return;
+    if (!recordedVideoName || !recordedVideoUrl) return;
     setVideoName(recordedVideoName);
+    setSelectedVideoPreviewUrl(recordedVideoUrl);
     setStep((s) => (s < 3 ? 3 : s));
     setCameraError("");
   };
@@ -421,6 +424,9 @@ export function Evaluate() {
                   const f = e.target.files?.[0];
 
                   setVideoName(f?.name ?? null);
+                  if (f) {
+                    setSelectedVideoPreviewUrl(URL.createObjectURL(f));
+                  }
 
                   if (f) setStep((s) => (s < 3 ? 3 : s));
 
@@ -470,6 +476,16 @@ export function Evaluate() {
 
             onClick={() => {
               const submission = registerFolderFiles(folderId, { pptName, videoName });
+              if (submission && selectedVideoPreviewUrl) {
+                try {
+                  const raw = sessionStorage.getItem("overnight-video-preview-by-submission-v1");
+                  const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+                  map[submission.id] = selectedVideoPreviewUrl;
+                  sessionStorage.setItem("overnight-video-preview-by-submission-v1", JSON.stringify(map));
+                } catch {
+                  /* ignore */
+                }
+              }
               navigate(
                 submission
                   ? `/analysis?submissionId=${encodeURIComponent(submission.id)}`
