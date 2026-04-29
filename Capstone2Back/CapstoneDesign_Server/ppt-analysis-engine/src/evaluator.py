@@ -7,12 +7,13 @@ import re
 from collections import Counter
 from datetime import datetime
 from statistics import mean
-from typing import Any
+from typing import Any, Callable
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 _TOKEN_RE = re.compile(r"[0-9A-Za-z가-힣]{2,}")
 _SENT_SPLIT_RE = re.compile(r"[.!?]\s+|\n+")
+ProgressCallback = Callable[[str], None]
 
 
 def _clamp01(v: float) -> float:
@@ -124,7 +125,10 @@ def _slide_readability(slide: dict[str, Any]) -> float:
     return round(good / len(sizes), 3)
 
 
-def extract_ppt_features(parsed: dict[str, Any]) -> dict[str, Any]:
+def extract_ppt_features(
+    parsed: dict[str, Any],
+    progress_callback: ProgressCallback | None = None,
+) -> dict[str, Any]:
     slides = parsed.get("slides") or []
     slide_size = parsed.get("slide_size_emu") or {}
     slide_area = float((slide_size.get("width") or 0) * (slide_size.get("height") or 0))
@@ -134,12 +138,23 @@ def extract_ppt_features(parsed: dict[str, Any]) -> dict[str, Any]:
     readability_scores: list[float] = []
     text_overload_slides: list[int] = []
 
-    for s in slides:
+    total_slides = len(slides)
+    if progress_callback:
+        progress_callback(f"슬라이드 분석 시작 (총 {total_slides}장)")
+        progress_callback("- 핵심 문장 고르기 (TF-IDF)")
+        progress_callback("- 이미지와 텍스트 연관성 계산")
+        progress_callback("- 글자 크기 기반 가독성 점수 계산")
+        progress_callback("- 레이아웃 균형/텍스트 과다 여부 확인")
+
+    for i, s in enumerate(slides, start=1):
         idx = int(s.get("slide_index") or 0)
         title = (s.get("title") or "").strip()
         body = (s.get("body_text") or "").strip()
         notes = (s.get("notes_text") or "").strip()
 
+        if progress_callback:
+            if i == 1 or i % 5 == 0 or i == total_slides:
+                progress_callback(f"슬라이드 종합 분석 중... ({i}/{total_slides})")
         summary_points = _top_sentences(_join(title, body, notes), max_points=3)
         image_context = _image_context_for_slide(s)
         visual_balance = _slide_visual_balance(s, slide_area)
@@ -195,6 +210,10 @@ def extract_ppt_features(parsed: dict[str, Any]) -> dict[str, Any]:
             "text_overload": text_overload_slides,
         },
     }
+
+    if progress_callback:
+        progress_callback("전체 통계 정리 중...")
+        progress_callback("최종 점수 계산 중...")
 
     return {
         "metadata": metadata,

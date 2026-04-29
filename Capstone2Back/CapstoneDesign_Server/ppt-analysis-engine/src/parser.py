@@ -6,12 +6,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from pptx import Presentation
 from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.slide import Slide
+
+ProgressCallback = Callable[[str], None]
 
 
 def _strip_text(value: str | None) -> str:
@@ -26,14 +28,25 @@ class PPTParser:
     def __init__(self, ppt_path: str | Path) -> None:
         self.ppt_path = Path(ppt_path)
 
-    def extract(self) -> dict[str, Any]:
+    def extract(self, progress_callback: ProgressCallback | None = None) -> dict[str, Any]:
         if not self.ppt_path.is_file():
             raise FileNotFoundError(f"PPT 파일을 찾을 수 없습니다: {self.ppt_path}")
 
+        if progress_callback:
+            progress_callback("PPT 파일 로딩 중...")
         prs = Presentation(str(self.ppt_path))
         slides_out: list[dict[str, Any]] = []
+        total_slides = len(prs.slides)
+
+        if progress_callback:
+            progress_callback(f"슬라이드 읽기 시작 (총 {total_slides}장)")
+            progress_callback("읽는 정보: 제목, 본문 텍스트, 이미지 위치, 텍스트 박스, 글자 크기, 발표자 노트")
 
         for idx, slide in enumerate(prs.slides):
+            if progress_callback:
+                current = idx + 1
+                if current == 1 or current % 5 == 0 or current == total_slides:
+                    progress_callback(f"슬라이드 정보 읽는 중... ({current}/{total_slides})")
             slides_out.append(self._extract_slide(idx, slide))
 
         core = prs.core_properties
@@ -186,6 +199,9 @@ class PPTParser:
         return {"text": txt[:300], **self._shape_bounds(shape)}
 
 
-def parse_ppt_file(ppt_path: str | Path) -> dict[str, Any]:
+def parse_ppt_file(
+    ppt_path: str | Path,
+    progress_callback: ProgressCallback | None = None,
+) -> dict[str, Any]:
     """파일 경로를 받아 파싱 결과 딕셔너리를 반환합니다."""
-    return PPTParser(ppt_path).extract()
+    return PPTParser(ppt_path).extract(progress_callback=progress_callback)

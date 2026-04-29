@@ -6,23 +6,26 @@ PPT 분석 파이프라인 엔트리포인트.
 
 웹 프레임워크에서도 `analyze_ppt_file`을 import 해 재사용할 수 있습니다.
 """
-
+    
 from __future__ import annotations
 
 import argparse
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from src.evaluator import extract_ppt_features
 from src.parser import parse_ppt_file
 from src.utils import ppt_features_json_path, results_dir, save_json, uploads_dir
+
+ProgressCallback = Callable[[str], None]
 
 
 def analyze_ppt_file(
     ppt_path: str | Path,
     *,
     result_path: str | Path | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     """
     PPT 경로를 입력받아 features JSON dict를 반환하고 저장합니다.
@@ -32,12 +35,21 @@ def analyze_ppt_file(
         result_path: 저장 경로(미지정 시 data/results/{stem}.json)
     """
     ppt_path = Path(ppt_path)
-    parsed = parse_ppt_file(ppt_path)
-    out = extract_ppt_features(parsed)
+    if progress_callback:
+        progress_callback("[시작] PPT 분석을 시작합니다.")
+        progress_callback("[1/3] PPT에서 텍스트/이미지/폰트 정보를 읽는 중...")
+    parsed = parse_ppt_file(ppt_path, progress_callback=progress_callback)
+    if progress_callback:
+        progress_callback("[2/3] 슬라이드 내용을 분석해 점수를 계산하는 중...")
+    out = extract_ppt_features(parsed, progress_callback=progress_callback)
 
     dest = Path(result_path) if result_path else ppt_features_json_path(ppt_path)
+    if progress_callback:
+        progress_callback("[3/3] 분석 결과를 JSON 파일로 저장하는 중...")
     save_json(dest, out, indent=2)
     out["result_path"] = str(dest.resolve())
+    if progress_callback:
+        progress_callback("[완료] JSON 저장이 끝났습니다.")
     return out
 
 
@@ -58,7 +70,7 @@ def main() -> None:
     print(f"결과 디렉터리: {results_dir()}")
 
     try:
-        result = analyze_ppt_file(ppt_full)
+        result = analyze_ppt_file(ppt_full, progress_callback=lambda msg: print(f"[진행] {msg}"))
         print("분석 완료.")
         print(f"결과 파일: {result.get('result_path')}")
     except FileNotFoundError as exc:
