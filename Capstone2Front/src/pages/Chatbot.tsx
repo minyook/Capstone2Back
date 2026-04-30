@@ -59,6 +59,7 @@ function isAllowedAttachment(file: File): boolean {
 
 export function Chatbot() {
   const attachInputId = useId();
+  const pageRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bodyDragDepthRef = useRef(0);
@@ -85,6 +86,60 @@ export function Chatbot() {
       el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     });
   }, [messages, isLoading]);
+
+  /** 채팅 화면 안에서 스크린샷·복사 이미지 Ctrl+V / ⌘V 붙여넣기 */
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const root = pageRef.current;
+      if (!root?.contains(e.target as Node)) return;
+      const cd = e.clipboardData;
+      if (!cd) return;
+
+      const attachImage = (file: File) => {
+        e.preventDefault();
+        if (!isAllowedAttachment(file)) {
+          setMessages((prev) => [
+            ...prev,
+            { id: newId(), role: "user", text: `${file.name} 붙여넣기` },
+            {
+              id: newId(),
+              role: "bot",
+              text:
+                "이미지(png, jpg, webp 등) 또는 발표 파일(ppt, pptx)만 첨부할 수 있습니다.",
+            },
+          ]);
+          return;
+        }
+        setPendingFile(file);
+      };
+
+      for (let i = 0; i < cd.items.length; i++) {
+        const item = cd.items[i];
+        if (item.kind !== "file" || !item.type.startsWith("image/")) continue;
+        const blob = item.getAsFile();
+        if (!blob) continue;
+        let ext = blob.type.split("/")[1] || "png";
+        ext = ext.replace("+xml", "").replace("jpeg", "jpg");
+        if (ext.includes(";")) ext = ext.split(";")[0];
+        attachImage(new File([blob], `붙여넣기-${Date.now()}.${ext}`, { type: blob.type }));
+        return;
+      }
+
+      const files = cd.files;
+      if (files?.length) {
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
+          if (f.type.startsWith("image/")) {
+            attachImage(f);
+            return;
+          }
+        }
+      }
+    };
+
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, []);
 
   const canSend = !isLoading && (!!text.trim() || !!pendingFile);
 
@@ -265,11 +320,12 @@ export function Chatbot() {
   }
 
   return (
-    <div className="chatbot-page">
+    <div className="chatbot-page" ref={pageRef}>
       <header className="chatbot-page__head">
         <h1 className="chatbot-page__title">챗봇</h1>
         <p className="chatbot-page__sub">
-          채팅 영역 또는 입력줄로 이미지·PPT를 끌어다 놓은 뒤, 메시지와 함께 전송하세요.
+          이미지·PPT를 끌어다 놓거나, 채팅 화면에서 포커스를 둔 뒤{" "}
+          <strong>Ctrl+V</strong>(Mac: <strong>⌘V</strong>)로 캡처·복사 이미지를 붙여 넣을 수 있어요.
         </p>
       </header>
 
