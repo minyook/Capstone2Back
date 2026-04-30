@@ -1,8 +1,33 @@
 .shell {
 
-  min-height: 100vh;
+  flex: 1;
 
-  min-height: 100dvh;
+  min-height: 0;
+
+  width: 100%;
+
+  display: flex;
+
+  flex-direction: column;
+
+}
+
+/* 문서/프로젝트 등: 화면은 고정, 긴 목록은 워크스페이스 안에서만 스크롤 */
+.shell:has(.workspace) {
+
+  min-height: 0;
+
+  max-height: 100dvh;
+
+  max-height: 100vh;
+
+  overflow: hidden;
+
+}
+
+.shell:has(.workspace) .shell__main {
+
+  overflow: hidden;
 
   display: flex;
 
@@ -312,6 +337,8 @@
   display: flex;
 
   flex-direction: column;
+
+  overflow-y: auto;
 
 }
 
