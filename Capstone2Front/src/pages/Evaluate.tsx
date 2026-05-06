@@ -17,13 +17,14 @@ export function Evaluate() {
 
   const navigate = useNavigate();
 
-  const { folders } = useFolders();
+  const { folders, scopeId } = useFolders();
 
   const [step, setStep] = useState<Step>(1);
 
   const [folderId, setFolderId] = useState<string>("");
 
   const [pptName, setPptName] = useState<string | null>(null);
+  const [pptFile, setPptFile] = useState<File | null>(null);
 
   const [videoName, setVideoName] = useState<string | null>(null);
 
@@ -36,6 +37,8 @@ export function Evaluate() {
   const [recordedVideoName, setRecordedVideoName] = useState<string | null>(null);
 
   const [selectedVideoPreviewUrl, setSelectedVideoPreviewUrl] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string>("");
 
   const previewRef = useRef<HTMLVideoElement | null>(null);
 
@@ -159,7 +162,52 @@ export function Evaluate() {
 
   const hasFolders = folders.length > 0;
 
-  const canAnalyze = Boolean(folderId && pptName && videoName && hasFolders);
+  const canAnalyze = Boolean(folderId && pptName && pptFile && videoName && hasFolders);
+
+  const handleAnalyzeClick = async () => {
+    if (!pptFile) {
+      setSubmitError("PPT 파일을 먼저 선택해 주세요.");
+      return;
+    }
+
+    setSubmitError("");
+    setIsSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", pptFile);
+
+      const res = await fetch("http://127.0.0.1:8000/api/ppt/analyze", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(err?.detail ?? "PPT 분석 요청에 실패했습니다.");
+      }
+
+      const submission = await registerFolderFiles(scopeId, folderId, { pptName, videoName });
+      if (submission && selectedVideoPreviewUrl) {
+        try {
+          const raw = sessionStorage.getItem("overnight-video-preview-by-submission-v1");
+          const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+          map[submission.id] = selectedVideoPreviewUrl;
+          sessionStorage.setItem("overnight-video-preview-by-submission-v1", JSON.stringify(map));
+        } catch {
+          /* ignore */
+        }
+      }
+      navigate(
+        submission
+          ? `/analysis?submissionId=${encodeURIComponent(submission.id)}`
+          : "/analysis"
+      );
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "서버와 연결할 수 없습니다.";
+      setSubmitError(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
 
 
@@ -318,6 +366,7 @@ export function Evaluate() {
                 const f = e.target.files?.[0];
 
                 setPptName(f?.name ?? null);
+                setPptFile(f ?? null);
 
                 if (f) setStep((s) => (s < 2 ? 2 : s));
 
@@ -472,32 +521,16 @@ export function Evaluate() {
 
             className="evaluate-btn evaluate-btn--primary evaluate-btn--block"
 
-            disabled={!canAnalyze}
-
-            onClick={() => {
-              const submission = registerFolderFiles(folderId, { pptName, videoName });
-              if (submission && selectedVideoPreviewUrl) {
-                try {
-                  const raw = sessionStorage.getItem("overnight-video-preview-by-submission-v1");
-                  const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
-                  map[submission.id] = selectedVideoPreviewUrl;
-                  sessionStorage.setItem("overnight-video-preview-by-submission-v1", JSON.stringify(map));
-                } catch {
-                  /* ignore */
-                }
-              }
-              navigate(
-                submission
-                  ? `/analysis?submissionId=${encodeURIComponent(submission.id)}`
-                  : "/analysis"
-              );
-            }}
+            disabled={!canAnalyze || isSubmitting}
+            onClick={handleAnalyzeClick}
 
           >
 
             {canAnalyze
 
-              ? "채점 시작하기"
+              ? isSubmitting
+                ? "PPT 분석 중..."
+                : "채점 시작하기"
 
               : !hasFolders
 
@@ -510,6 +543,8 @@ export function Evaluate() {
                   : "채점 시작하기"}
 
           </button>
+
+          {submitError ? <p className="evaluate-note evaluate-note--error">{submitError}</p> : null}
 
           {!canAnalyze && (
 

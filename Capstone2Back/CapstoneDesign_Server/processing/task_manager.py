@@ -145,28 +145,37 @@ def run_analysis_task(job_id: str, video_path: Path, frame_dir: Path, video_dir:
             except Exception:
                 ppt_summary = "PPT 결과 파일 읽기 실패"
 
-        # AI 피드백 생성
-        llama_prompt = f"""
-[사용자 제공 채점 기준]
-{unified_rubric if unified_rubric else "표준 발표 채점 기준에 따라 평가하세요."}
+        # 7. AI 피드백 생성 (FeedbackEngine 사용)
+        from core.feedback_engine import feedback_engine
+        
+        # 관련 JSON 파일 경로 수집
+        json_paths = {
+            "face": Path("processing/MediaPipe_json/final_time_series.json"),
+            "gesture": Path("processing/Yolo_json/gesture_time_series.json"),
+            "ppt": None
+        }
+        
+        # PPT 결과 파일 경로 탐색 (가장 최근 파일 또는 특정 패턴)
+        ppt_results_dir = Path("ppt-analysis-engine/data/results")
+        if ppt_results_dir.exists():
+            ppt_files = list(ppt_results_dir.glob("*_example.json"))
+            if ppt_files:
+                json_paths["ppt"] = ppt_files[0] # 첫 번째 매칭 파일 사용
 
-[발표 종합 분석 데이터]
-1. 시각 지표:
-   - 영상 타입: {video_type.value}
-   - 얼굴 검출률: {(face_stats['detected_count']/total_frames)*100:.1f}%
-   - 시선 집중도: {1 - face_stats['gaze_h']:.2f} (1.0에 가까울수록 정면 응시 양호)
-   - 미소 빈도: {face_stats['smile']:.2f}
-   - 제스처 감지: {"활발함" if pose_stats['detected_count'] > 0 else "제한적임"}
+        analysis_summary = {
+            "video_type": video_type.value,
+            "total_time": total_frames / FRAME_RATE,
+            "face_detection_rate": (face_stats['detected_count'] / total_frames) * 100,
+            "gaze_score": 1 - face_stats['gaze_h'],
+            "smile_score": face_stats['smile'],
+            "gesture_status": "활발함" if pose_stats['detected_count'] > 0 else "제한적임",
+            "avg_pitch": avg_pitch if audio_segments else 0,
+            "avg_db": avg_db if audio_segments else 0,
+            "avg_speed": avg_speed if audio_segments else 1.0,
+            "ppt_summary": ppt_summary
+        }
 
-2. 음성 지표:
-   - {voice_summary}
-
-3. PPT 콘텐츠:
-   - {ppt_summary}
-
-위 지표들과 [사용자 제공 채점 기준]을 바탕으로 발표자의 태도, 전달력, 전문성을 종합 평가하여 항목별 점수와 상세 피드백을 작성해줘.
-"""
-        llama_feedback = get_feedback_from_coach(llama_prompt)
+        llama_feedback = feedback_engine.generate_feedback(analysis_summary, unified_rubric, json_paths)
         
         print(f"\n{'='*20} 🤖 AI 발표 코치 피드백 {'='*20}")
         print(llama_feedback)
@@ -177,14 +186,23 @@ def run_analysis_task(job_id: str, video_path: Path, frame_dir: Path, video_dir:
 
         raw_data_json = [f.to_dict() for f in all_vision_results]
         final_result = {
+            "job_id": job_id,
             "video_type": video_type.value,
+            "analysis_summary": analysis_summary,
             "llama_feedback": llama_feedback,
             "raw_data": raw_data_json,
             "aligned_transcript_data": aligned_data
         }
         
-        job_status[job_id] = {"status": "Complete", "result": final_result}
-        print(f"✅ 모든 분석 작업 완료! (Job: {job_id})")
+        # [추가] 통합 결과 JSON 파일로 영구 저장
+        report_dir = Path("processing/Results_json")
+        report_dir.mkdir(parents=True, exist_ok=True)
+        report_path = report_dir / f"report_{job_id}.json"
+        with open(report_path, 'w', encoding='utf-8') as f:
+            json.dump(final_result, f, indent=4, ensure_ascii=False)
+        
+        job_status[job_id] = {"status": "Complete", "result": final_result, "report_path": str(report_path)}
+        print(f"✅ 모든 분석 작업 완료! (보고서 저장: {report_path})")
 
     except Exception as e:
         print(f"\n❌ 작업 실패 (Job: {job_id}) | 오류: {e}")

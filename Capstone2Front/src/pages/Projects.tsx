@@ -17,7 +17,7 @@ type SortKey = "latest" | "name";
 
 export function Projects() {
 
-  const { folders, createFolder, removeFolder } = useFolders();
+  const { folders, createFolder, removeFolder, scopeId } = useFolders();
 
   const [newFolderOpen, setNewFolderOpen] = useState(false);
 
@@ -53,8 +53,8 @@ export function Projects() {
   );
 
   const fileSheetSubmissions = useMemo(
-    () => (fileSheetFolderId ? listFolderSubmissions(fileSheetFolderId) : []),
-    [fileSheetFolderId]
+    () => (fileSheetFolderId ? listFolderSubmissions(scopeId, fileSheetFolderId) : []),
+    [scopeId, fileSheetFolderId]
   );
 
   useEffect(() => {
@@ -63,11 +63,11 @@ export function Projects() {
     }
   }, [folders, fileSheetFolderId]);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
 
     setFolderError("");
 
-    const ok = createFolder(folderName);
+    const ok = await createFolder(folderName);
 
     if (ok) {
 

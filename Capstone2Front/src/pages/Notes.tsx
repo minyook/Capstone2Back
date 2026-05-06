@@ -1,39 +1,52 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { IconArrowLeft } from "../components/Icons";
 
+import { useFirestoreSyncRevision } from "../context/FirestoreSyncContext";
 import { useFolders } from "../context/FoldersContext";
 
+import { foldersUseFirestore } from "../data/folderFirestore";
 import { formatFolderDate } from "../data/folderStorage";
 import {
   listFolderSubmissions,
   submissionPrimaryFileName,
 } from "../data/folderFilesStorage";
+import {
+  migrateNotesPrefsFromLocal,
+  subscribeNotesPrefs,
+  saveNotesPrefsFirestore,
+  type NotesPrefsData,
+} from "../data/notesPrefsFirestore";
+import { db } from "../firebase/config";
 
 import "./Notes.css";
 
 
 
-const NOTES_FOLDER_KEY = "overnight-notes-selected-folder";
+function notesFolderKey(scopeId: string): string {
+  return `overnight-notes-selected-folder-v2:${scopeId}`;
+}
 
-const NOTES_SUB_BY_FOLDER = "overnight-notes-submission-by-folder";
+function notesSubByFolderKey(scopeId: string): string {
+  return `overnight-notes-submission-by-folder-v2:${scopeId}`;
+}
 
-function readSubmissionByFolder(): Record<string, string> {
+function readSubmissionByFolder(scopeId: string): Record<string, string> {
   try {
-    const raw = localStorage.getItem(NOTES_SUB_BY_FOLDER);
+    const raw = localStorage.getItem(notesSubByFolderKey(scopeId));
     return raw ? (JSON.parse(raw) as Record<string, string>) : {};
   } catch {
     return {};
   }
 }
 
-function writeSubmissionForFolder(folderId: string, submissionId: string): void {
-  const m = readSubmissionByFolder();
+function writeSubmissionForFolder(scopeId: string, folderId: string, submissionId: string): void {
+  const m = readSubmissionByFolder(scopeId);
   m[folderId] = submissionId;
   try {
-    localStorage.setItem(NOTES_SUB_BY_FOLDER, JSON.stringify(m));
+    localStorage.setItem(notesSubByFolderKey(scopeId), JSON.stringify(m));
   } catch {
     /* ignore */
   }
@@ -43,7 +56,15 @@ function writeSubmissionForFolder(folderId: string, submissionId: string): void 
 
 export function Notes() {
 
-  const { folders } = useFolders();
+  const { folders, scopeId } = useFolders();
+
+  const useFsPrefs = foldersUseFirestore(scopeId) && !!db;
+
+  const fsRevision = useFirestoreSyncRevision();
+
+  const [fbPrefs, setFbPrefs] = useState<NotesPrefsData | null>(null);
+
+  const prefsHydratedRef = useRef(false);
 
   const navigate = useNavigate();
 
@@ -59,7 +80,9 @@ export function Notes() {
 
     try {
 
-      return localStorage.getItem(NOTES_FOLDER_KEY) ?? "";
+      if (foldersUseFirestore(scopeId)) return "";
+
+      return localStorage.getItem(notesFolderKey(scopeId)) ?? "";
 
     } catch {
 
@@ -73,13 +96,47 @@ export function Notes() {
 
   useEffect(() => {
 
+    if (!useFsPrefs) {
+
+      setFbPrefs(null);
+
+      return;
+
+    }
+
+    let unsub: (() => void) | undefined;
+
+    void migrateNotesPrefsFromLocal(scopeId).then(() => {
+
+      unsub = subscribeNotesPrefs(scopeId, setFbPrefs);
+
+    });
+
+    return () => unsub?.();
+
+  }, [scopeId, useFsPrefs]);
+
+
+
+  useEffect(() => {
+
+    prefsHydratedRef.current = false;
+
+  }, [scopeId]);
+
+
+
+  useEffect(() => {
+
+    if (useFsPrefs) return;
+
     if (folders.length === 0) {
 
       setSelectedFolderId("");
 
       try {
 
-        localStorage.removeItem(NOTES_FOLDER_KEY);
+        localStorage.removeItem(notesFolderKey(scopeId));
 
       } catch {
 
@@ -91,15 +148,57 @@ export function Notes() {
 
     }
 
-    const exists = folders.some((f) => f.id === selectedFolderId);
+    setSelectedFolderId((prev) => {
 
-    if (!selectedFolderId || !exists) {
+      const exists = folders.some((f) => f.id === prev);
 
-      setSelectedFolderId(folders[0].id);
+      if (!prev || !exists) return folders[0].id;
+
+      return prev;
+
+    });
+
+  }, [folders, scopeId, useFsPrefs]);
+
+
+
+  useEffect(() => {
+
+    if (!useFsPrefs) return;
+
+    if (folders.length === 0) {
+
+      setSelectedFolderId("");
+
+      return;
 
     }
 
-  }, [folders, selectedFolderId]);
+    if (fbPrefs !== null && !prefsHydratedRef.current) {
+
+      prefsHydratedRef.current = true;
+
+      const sid = fbPrefs.selectedFolderId;
+
+      if (sid && folders.some((f) => f.id === sid)) {
+
+        setSelectedFolderId(sid);
+
+        return;
+
+      }
+
+    }
+
+    setSelectedFolderId((prev) => {
+
+      if (prev && folders.some((f) => f.id === prev)) return prev;
+
+      return folders[0].id;
+
+    });
+
+  }, [folders, fbPrefs, scopeId, useFsPrefs]);
 
 
 
@@ -107,17 +206,25 @@ export function Notes() {
 
     if (!selectedFolderId) return;
 
-    try {
+    if (!useFsPrefs) {
 
-      localStorage.setItem(NOTES_FOLDER_KEY, selectedFolderId);
+      try {
 
-    } catch {
+        localStorage.setItem(notesFolderKey(scopeId), selectedFolderId);
 
-      /* ignore */
+      } catch {
+
+        /* ignore */
+
+      }
+
+      return;
 
     }
 
-  }, [selectedFolderId]);
+    void saveNotesPrefsFirestore(scopeId, { selectedFolderId });
+
+  }, [selectedFolderId, scopeId, useFsPrefs]);
 
 
 
@@ -131,11 +238,11 @@ export function Notes() {
 
     }
 
-    const map = readSubmissionByFolder();
+    const map = useFsPrefs ? (fbPrefs?.submissionByFolder ?? {}) : readSubmissionByFolder(scopeId);
 
     const saved = map[selectedFolderId];
 
-    const subs = listFolderSubmissions(selectedFolderId);
+    const subs = listFolderSubmissions(scopeId, selectedFolderId);
 
     if (saved && subs.some((s) => s.id === saved)) {
 
@@ -147,15 +254,15 @@ export function Notes() {
 
     }
 
-  }, [selectedFolderId]);
+  }, [selectedFolderId, scopeId, useFsPrefs, fbPrefs, fsRevision, fileSheet, location.key]);
 
 
 
   const folderSubmissions = useMemo(
 
-    () => (selectedFolderId ? listFolderSubmissions(selectedFolderId) : []),
+    () => (selectedFolderId ? listFolderSubmissions(scopeId, selectedFolderId) : []),
 
-    [selectedFolderId, fileSheet, location.key]
+    [scopeId, selectedFolderId, fileSheet, location.key, fsRevision]
 
   );
 
@@ -415,7 +522,25 @@ export function Notes() {
 
                         if (!selectedFolderId) return;
 
-                        writeSubmissionForFolder(selectedFolderId, sub.id);
+                        if (useFsPrefs) {
+
+                          void saveNotesPrefsFirestore(scopeId, {
+
+                            submissionByFolder: {
+
+                              ...(fbPrefs?.submissionByFolder ?? {}),
+
+                              [selectedFolderId]: sub.id,
+
+                            },
+
+                          });
+
+                        } else {
+
+                          writeSubmissionForFolder(scopeId, selectedFolderId, sub.id);
+
+                        }
 
                         setSelectedSubmissionId(sub.id);
 
