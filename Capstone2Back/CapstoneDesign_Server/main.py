@@ -30,6 +30,7 @@ from core.gemini_client import chat_with_gemini, stream_chat_with_gemini
 BASE_DIR = Path(__file__).resolve().parent
 PPT_ENGINE_DIR = BASE_DIR / "ppt-analysis-engine"
 PPT_UPLOAD_DIR = PPT_ENGINE_DIR / "data" / "uploads"
+PPT_JSON_DIR = BASE_DIR / "analysis_json" / "ppt_json"
 _PPT_ANALYZE_FUNC = None
 
 def _get_ppt_analyze_func():
@@ -166,7 +167,9 @@ async def analyze_ppt(file: UploadFile = File(...)):
     try:
         save_upload_file(file, saved_path)
         analyze_ppt_file = _get_ppt_analyze_func()
-        result = analyze_ppt_file(saved_path)
+        PPT_JSON_DIR.mkdir(parents=True, exist_ok=True)
+        result_json_path = PPT_JSON_DIR / f"{saved_path.stem}.json"
+        result = analyze_ppt_file(saved_path, result_path=result_json_path)
         return {
             "status": "ok",
             "uploaded_file": saved_name,

@@ -1,12 +1,70 @@
 import whisper
 import parselmouth 
 import os
+import json
 from dotenv import load_dotenv
 from pathlib import Path
 import numpy as np
 
 # ❗️ 로컬 모델을 전역 변수로 관리하여 한번만 로드
 model = None
+VOICE_JSON_DIR = Path("processing/Voice_json")
+VOICE_JSON_PATH = VOICE_JSON_DIR / "voice_time_series.json"
+
+
+def _format_timestamp(seconds: float) -> str:
+    mins, secs = divmod(seconds, 60)
+    hours, mins = divmod(mins, 60)
+    return f"{int(hours):02d}:{int(mins):02d}:{int(secs):02d}.{int((seconds % 1) * 100):02d}"
+
+
+def save_voice_data(segments: list, error_message: str | None = None) -> None:
+    """
+    음성 분석 결과를 최종 채점 결합용 JSON으로 저장합니다.
+    - key: 구간 시작 시각 타임스탬프
+    - value: STT/운율/속도 정보
+    """
+    payload: dict[str, object] = {
+        "source": "audio_analyzer",
+        "segment_count": len(segments),
+        "segments": {},
+    }
+    if error_message:
+        payload["error"] = error_message
+
+    segment_map: dict[str, object] = {}
+    for idx, segment in enumerate(segments):
+        start = float(segment.get("start", 0.0))
+        end = float(segment.get("end", start))
+        text = str(segment.get("text", "")).strip()
+        duration = max(0.0, end - start)
+        speech_rate_cps = (len(text) / duration) if duration > 0 else 0.0
+
+        jitter = float(segment.get("jitter", 0.0))
+        shimmer = float(segment.get("shimmer", 0.0))
+        if np.isnan(jitter):
+            jitter = 0.0
+        if np.isnan(shimmer):
+            shimmer = 0.0
+
+        segment_map[_format_timestamp(start)] = {
+            "segment_index": idx,
+            "start": round(start, 3),
+            "end": round(end, 3),
+            "duration": round(duration, 3),
+            "text": text,
+            "speech_rate_cps": round(speech_rate_cps, 3),
+            "prosody": {
+                "jitter": round(jitter, 3),
+                "shimmer": round(shimmer, 3),
+            },
+        }
+
+    payload["segments"] = segment_map
+    VOICE_JSON_DIR.mkdir(parents=True, exist_ok=True)
+    with open(VOICE_JSON_PATH, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=4, ensure_ascii=False)
+    print(f"   > Voice JSON 저장 완료: {VOICE_JSON_PATH}")
 
 def load_local_whisper_model():
     """
@@ -31,7 +89,9 @@ def transcribe_audio_with_timestamps(audio_path: str):
     """
     global model
     if not model:
-        return [], "Whisper 모델이 서버에 로드되지 않았습니다. 서버 로그를 확인하세요."
+        err = "Whisper 모델이 서버에 로드되지 않았습니다. 서버 로그를 확인하세요."
+        save_voice_data([], error_message=err)
+        return [], err
 
     print(f"   > [4/6] ❗️ 로컬 음성 인식(Whisper) 실행 중... (시간 소요)")
     
@@ -42,7 +102,9 @@ def transcribe_audio_with_timestamps(audio_path: str):
         
     except Exception as e:
         print(f"❌ 로컬 Whisper 실행 오류: {e}")
-        return [], str(e) 
+        err = str(e)
+        save_voice_data([], error_message=err)
+        return [], err 
 
 # ⭐️ [수정] 음성 운율(목소리 떨림) 분석 함수 로직 수정
 def analyze_prosody_for_segments(audio_path: Path, segments: list) -> list:
@@ -75,6 +137,7 @@ def analyze_prosody_for_segments(audio_path: Path, segments: list) -> list:
             if np.isnan(segment['shimmer']): segment['shimmer'] = 0
 
         print(f"   > [5/6] ✅ 음성 운율 분석 완료.")
+        save_voice_data(segments)
         return segments 
         
     except Exception as e:
@@ -84,4 +147,5 @@ def analyze_prosody_for_segments(audio_path: Path, segments: list) -> list:
                 segment['jitter'] = 0
             if 'shimmer' not in segment:
                 segment['shimmer'] = 0
+        save_voice_data(segments, error_message=str(e))
         return segments
