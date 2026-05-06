@@ -17,7 +17,7 @@ export function Evaluate() {
 
   const navigate = useNavigate();
 
-  const { folders } = useFolders();
+  const { folders, scopeId } = useFolders();
 
   const [step, setStep] = useState<Step>(1);
 
@@ -185,7 +185,7 @@ export function Evaluate() {
         throw new Error(err?.detail ?? "PPT 분석 요청에 실패했습니다.");
       }
 
-      const submission = registerFolderFiles(folderId, { pptName, videoName });
+      const submission = await registerFolderFiles(scopeId, folderId, { pptName, videoName });
       if (submission && selectedVideoPreviewUrl) {
         try {
           const raw = sessionStorage.getItem("overnight-video-preview-by-submission-v1");

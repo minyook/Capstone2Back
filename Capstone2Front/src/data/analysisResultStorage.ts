@@ -1,37 +1,17 @@
-import type { CategoryScores } from "./firestoreModel";
 import type { RubricCategoryId } from "./rubric";
 import { RUBRIC } from "./rubric";
+import { foldersUseFirestore } from "./folderFirestore";
+import { getAnalysisScoresCache, saveAnalysisScoresToFirestore } from "./analysisScoresFirestore";
+import type { StoredRubricScores } from "./storedRubricScores";
+import { parseStoredRubricScores } from "./storedRubricScores";
 
-/** 루브릭 3영역 점수 — Firestore `GradingScores.scores` 와 동일 구조 */
-export type StoredRubricScores = Record<RubricCategoryId, CategoryScores>;
+export type { StoredRubricScores } from "./storedRubricScores";
+export { parseStoredRubricScores } from "./storedRubricScores";
 
 const STORAGE_KEY = "overnight-analysis-result-v1";
-
-/** 제출(세션)별 채점 — `submissionId` → 점수 */
 const BY_SUBMISSION_KEY = "overnight-analysis-by-submission-v1";
 
-function isCategoryScores(raw: unknown, itemCount: number): raw is CategoryScores {
-  if (!raw || typeof raw !== "object") return false;
-  const o = raw as Record<string, unknown>;
-  if (typeof o.category !== "number") return false;
-  if (!Array.isArray(o.items)) return false;
-  if (o.items.length !== itemCount) return false;
-  return o.items.every((x) => typeof x === "number");
-}
-
-export function parseStoredRubricScores(raw: unknown): StoredRubricScores | null {
-  if (!raw || typeof raw !== "object") return null;
-  const obj = raw as Record<string, unknown>;
-  const out: Partial<StoredRubricScores> = {};
-  for (const cat of RUBRIC) {
-    const c = obj[cat.id];
-    if (!isCategoryScores(c, cat.items.length)) return null;
-    out[cat.id] = c;
-  }
-  return out as StoredRubricScores;
-}
-
-export function loadAnalysisResult(): StoredRubricScores | null {
+function loadAnalysisResultLocal(): StoredRubricScores | null {
   try {
     const s = localStorage.getItem(STORAGE_KEY);
     if (!s) return null;
@@ -41,7 +21,7 @@ export function loadAnalysisResult(): StoredRubricScores | null {
   }
 }
 
-function loadSubmissionScoreMap(): Record<string, StoredRubricScores> {
+function loadSubmissionScoreMapLocal(): Record<string, StoredRubricScores> {
   try {
     const raw = localStorage.getItem(BY_SUBMISSION_KEY);
     if (!raw) return {};
@@ -58,26 +38,51 @@ function loadSubmissionScoreMap(): Record<string, StoredRubricScores> {
   }
 }
 
-/**
- * 분석 화면용: URL에 `submissionId`가 있으면 해당 제출 점수만, 없으면 예전 전역 저장(하위 호환).
- */
-export function loadScoresForView(submissionIdFromUrl: string | null): StoredRubricScores | null {
+function loadScoresForViewGuest(submissionIdFromUrl: string | null): StoredRubricScores | null {
   if (submissionIdFromUrl) {
-    const map = loadSubmissionScoreMap();
+    const map = loadSubmissionScoreMapLocal();
     return map[submissionIdFromUrl] ?? null;
   }
-  return loadAnalysisResult();
+  return loadAnalysisResultLocal();
 }
 
-/** 채점 API·Firestore 동기화 후 호출하면 Analysis 화면에 반영됩니다. */
-export function saveAnalysisResult(scores: StoredRubricScores): void {
+/**
+ * 로그인: Firestore 캐시 (`getAnalysisScoresCache`). 리렌더는 `useFirestoreSyncRevision()` 포함.
+ * 게스트: localStorage.
+ */
+export function loadScoresForView(
+  scopeId: string | null,
+  submissionIdFromUrl: string | null
+): StoredRubricScores | null {
+  if (!scopeId || !foldersUseFirestore(scopeId)) {
+    return loadScoresForViewGuest(submissionIdFromUrl);
+  }
+  const c = getAnalysisScoresCache();
+  if (submissionIdFromUrl) {
+    return c.bySubmission[submissionIdFromUrl] ?? null;
+  }
+  return c.global;
+}
+
+export function saveAnalysisResult(scopeId: string | null, scores: StoredRubricScores): void {
+  if (scopeId && foldersUseFirestore(scopeId)) {
+    void saveAnalysisScoresToFirestore(scopeId, null, scores);
+    return;
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(scores));
 }
 
-/** 특정 제출에 대한 채점 결과 저장 — 발표 기록에서 제출별로 조회할 때 사용 */
-export function saveAnalysisResultForSubmission(submissionId: string, scores: StoredRubricScores): void {
+export function saveAnalysisResultForSubmission(
+  scopeId: string | null,
+  submissionId: string,
+  scores: StoredRubricScores
+): void {
   if (!submissionId) return;
-  const map = loadSubmissionScoreMap();
+  if (scopeId && foldersUseFirestore(scopeId)) {
+    void saveAnalysisScoresToFirestore(scopeId, submissionId, scores);
+    return;
+  }
+  const map = loadSubmissionScoreMapLocal();
   map[submissionId] = scores;
   localStorage.setItem(BY_SUBMISSION_KEY, JSON.stringify(map));
 }
@@ -88,6 +93,6 @@ export function clearAnalysisResult(): void {
 
 export function totalFromScores(scores: StoredRubricScores): number {
   return Math.round(
-    RUBRIC.reduce((sum, cat) => sum + scores[cat.id].category, 0) / RUBRIC.length
+    RUBRIC.reduce((sum, cat) => sum + scores[cat.id as RubricCategoryId].category, 0) / RUBRIC.length
   );
 }

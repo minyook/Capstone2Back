@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useFirestoreSyncRevision } from "../context/FirestoreSyncContext";
 import { useFolders } from "../context/FoldersContext";
 import { listFolderSubmissions } from "../data/folderFilesStorage";
 import { loadScoresForView, totalFromScores } from "../data/analysisResultStorage";
@@ -9,16 +10,19 @@ import "./MyPage.css";
 export function MyPage() {
   const navigate = useNavigate();
   const { user, signOutUser } = useAuth();
-  const { folders } = useFolders();
+  const { folders, scopeId } = useFolders();
+  const fsRevision = useFirestoreSyncRevision();
   const [loggingOut, setLoggingOut] = useState(false);
 
   const folderCount = folders.length;
-  const allSubmissions = folders.flatMap((folder) => listFolderSubmissions(folder.id));
-  const totalPresentationCount = allSubmissions.length;
-  const gradeACount = allSubmissions.filter((submission) => {
-    const scores = loadScoresForView(submission.id);
-    return scores ? totalFromScores(scores) >= 90 : false;
-  }).length;
+  const { totalPresentationCount, gradeACount } = useMemo(() => {
+    const allSubmissions = folders.flatMap((folder) => listFolderSubmissions(scopeId, folder.id));
+    const gradeACountInner = allSubmissions.filter((submission) => {
+      const scores = loadScoresForView(scopeId, submission.id);
+      return scores ? totalFromScores(scores) >= 90 : false;
+    }).length;
+    return { totalPresentationCount: allSubmissions.length, gradeACount: gradeACountInner };
+  }, [folders, scopeId, fsRevision]);
 
   const label = user?.displayName?.trim() || user?.email?.split("@")[0] || "게스트";
   const email = user?.email ?? "로그인이 필요합니다";

@@ -1,22 +1,26 @@
 import { useMemo, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { useFirestoreSyncRevision } from "../context/FirestoreSyncContext";
+import { useFolders } from "../context/FoldersContext";
 import { findSubmissionById, submissionPrimaryFileName } from "../data/folderFilesStorage";
 import { loadScoresForView, totalFromScores, type StoredRubricScores } from "../data/analysisResultStorage";
 import { RUBRIC } from "../data/rubric";
 import "./Analysis.css";
 
 export function Analysis() {
+  const { scopeId } = useFolders();
+  const fsRevision = useFirestoreSyncRevision();
   const [searchParams] = useSearchParams();
   const submissionId = searchParams.get("submissionId");
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const scores = useMemo<StoredRubricScores | null>(
-    () => loadScoresForView(submissionId),
-    [submissionId]
+    () => loadScoresForView(scopeId, submissionId),
+    [scopeId, submissionId, fsRevision]
   );
   const submissionMeta = useMemo(
-    () => (submissionId ? findSubmissionById(submissionId) : null),
-    [submissionId]
+    () => (submissionId ? findSubmissionById(scopeId, submissionId) : null),
+    [scopeId, submissionId, fsRevision]
   );
 
   const hasData = scores !== null;

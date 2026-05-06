@@ -13,6 +13,7 @@ export const COL_USERS = "users";
 /** 챗봇 다중 대화: `users/{uid}/chatThreads/{threadId}` 및 하위 `messages` */
 export const COL_CHAT_THREADS = "chatThreads";
 export const COL_CHAT_MESSAGES = "messages";
+/** Projects 폴더: `users/{uid}/folders/{folderId}`, 휴지통 `users/{uid}/foldersTrash/{folderId}` */
 export const COL_FOLDERS = "folders";
 export const COL_GRADING_SESSIONS = "gradingSessions";
 

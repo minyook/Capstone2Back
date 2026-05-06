@@ -2,8 +2,15 @@ import type { FolderFileKind, FolderFileRecord, FolderSubmission, SubmissionFile
 
 export type { FolderFileKind, FolderSubmission, SubmissionFile } from "./folderFileTypes";
 
-const STORAGE_KEY = "overnight-folder-submissions-v1";
-const LEGACY_KEY = "overnight-folder-files-v1";
+import { foldersUseFirestore } from "./folderFirestore";
+import { getSubmissionsCache, registerSubmissionInFirestore } from "./folderSubmissionsFirestore";
+
+const LEGACY_SUBMISSIONS_KEY = "overnight-folder-submissions-v1";
+const LEGACY_FILES_KEY = "overnight-folder-files-v1";
+
+function storeKey(scopeId: string): string {
+  return `overnight-folder-submissions-v2:${scopeId}`;
+}
 
 type Store = Record<string, FolderSubmission[]>;
 
@@ -56,9 +63,8 @@ function parseStore(raw: unknown): Store {
   return out;
 }
 
-/** 예전 flat 배열 → 제출 1건으로 묶어 병합 */
-function mergeLegacyIntoStore(store: Store): Store {
-  const legacyRaw = localStorage.getItem(LEGACY_KEY);
+function mergeLegacyIntoStore(scopeId: string, store: Store): Store {
+  const legacyRaw = localStorage.getItem(LEGACY_FILES_KEY);
   if (!legacyRaw) return store;
 
   try {
@@ -81,44 +87,71 @@ function mergeLegacyIntoStore(store: Store): Store {
       const existing = next[folderId] ?? [];
       next[folderId] = [...existing, submission];
     }
-    localStorage.removeItem(LEGACY_KEY);
+    localStorage.removeItem(LEGACY_FILES_KEY);
+    saveAllLocal(scopeId, next);
     return next;
   } catch {
     return store;
   }
 }
 
-function loadAll(): Store {
+function migrateLegacySubmissionsGuest(scopeId: string): Store | null {
+  if (scopeId !== "__guest__") return null;
+  const raw = localStorage.getItem(LEGACY_SUBMISSIONS_KEY);
+  if (!raw) return null;
+  try {
+    const store = parseStore(JSON.parse(raw) as unknown);
+    localStorage.removeItem(LEGACY_SUBMISSIONS_KEY);
+    saveAllLocal(scopeId, store);
+    return store;
+  } catch {
+    localStorage.removeItem(LEGACY_SUBMISSIONS_KEY);
+    return {};
+  }
+}
+
+function loadAllLocal(scopeId: string): Store {
   let store: Store = {};
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) store = parseStore(JSON.parse(raw) as unknown);
+    const raw = localStorage.getItem(storeKey(scopeId));
+    if (raw) {
+      store = parseStore(JSON.parse(raw) as unknown);
+    } else {
+      const migrated = migrateLegacySubmissionsGuest(scopeId);
+      if (migrated !== null) store = migrated;
+    }
   } catch {
     store = {};
   }
 
-  if (localStorage.getItem(LEGACY_KEY)) {
-    store = mergeLegacyIntoStore(store);
-    saveAll(store);
+  if (localStorage.getItem(LEGACY_FILES_KEY)) {
+    store = mergeLegacyIntoStore(scopeId, store);
   }
   return store;
 }
 
-function saveAll(store: Store): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+function saveAllLocal(scopeId: string, store: Store): void {
+  localStorage.setItem(storeKey(scopeId), JSON.stringify(store));
+}
+
+function loadAll(scopeId: string): Store {
+  if (foldersUseFirestore(scopeId)) {
+    return getSubmissionsCache();
+  }
+  return loadAllLocal(scopeId);
 }
 
 /** 최신 제출이 위로 오도록 */
-export function listFolderSubmissions(folderId: string): FolderSubmission[] {
-  const all = loadAll();
+export function listFolderSubmissions(scopeId: string, folderId: string): FolderSubmission[] {
+  const all = loadAll(scopeId);
   const list = all[folderId] ?? [];
   return [...list].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
 }
 
-/** 제출 ID로 검색 (URL·채점 화면 연동용) */
-export function findSubmissionById(submissionId: string): FolderSubmission | null {
+/** 제출 ID로 검색 */
+export function findSubmissionById(scopeId: string, submissionId: string): FolderSubmission | null {
   if (!submissionId) return null;
-  const all = loadAll();
+  const all = loadAll(scopeId);
   for (const subs of Object.values(all)) {
     const found = subs.find((s) => s.id === submissionId);
     if (found) return found;
@@ -133,13 +166,19 @@ export function submissionPrimaryFileName(sub: FolderSubmission): string {
 }
 
 /**
- * 발표 평가에서 「채점 시작」 시 호출 — 한 번의 제출로 묶어 문서·발표 기록「저장 파일」에 쌓습니다.
+ * 발표 평가 「채점 시작」 시 호출.
+ * 로그인: Firestore · 게스트: localStorage
  */
-export function registerFolderFiles(
+export async function registerFolderFiles(
+  scopeId: string,
   folderId: string,
   files: { pptName?: string | null; videoName?: string | null }
-): FolderSubmission | null {
+): Promise<FolderSubmission | null> {
   if (!folderId) return null;
+
+  if (foldersUseFirestore(scopeId)) {
+    return registerSubmissionInFirestore(scopeId, folderId, files);
+  }
 
   const submissionFiles: SubmissionFile[] = [];
   const push = (name: string | null | undefined, kind: FolderFileKind) => {
@@ -151,7 +190,7 @@ export function registerFolderFiles(
   push(files.videoName, "video");
   if (submissionFiles.length === 0) return null;
 
-  const all = loadAll();
+  const all = loadAllLocal(scopeId);
   const submission: FolderSubmission = {
     id: newId(),
     folderId,
@@ -160,6 +199,6 @@ export function registerFolderFiles(
   };
   const list = all[folderId] ?? [];
   all[folderId] = [submission, ...list];
-  saveAll(all);
+  saveAllLocal(scopeId, all);
   return submission;
 }
