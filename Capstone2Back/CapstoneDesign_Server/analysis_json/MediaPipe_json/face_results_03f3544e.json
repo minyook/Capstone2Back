@@ -1,0 +1,62 @@
+{
+    "total_duration": 14.2,
+    "face_analysis_report": [
+        {
+            "start": 0.2,
+            "end": 0.8,
+            "duration": 0.6,
+            "state": "정면 응시함"
+        },
+        {
+            "start": 0.8,
+            "end": 2.0,
+            "duration": 1.2,
+            "state": "눈썹 강조 (열정적)"
+        },
+        {
+            "start": 2.2,
+            "end": 4.2,
+            "duration": 2.0,
+            "state": "눈썹 강조 (열정적)"
+        },
+        {
+            "start": 5.0,
+            "end": 5.6,
+            "duration": 0.6,
+            "state": "눈썹 강조 (열정적)"
+        },
+        {
+            "start": 5.8,
+            "end": 6.6,
+            "duration": 0.8,
+            "state": "눈썹 강조 (열정적)"
+        },
+        {
+            "start": 6.6,
+            "end": 7.4,
+            "duration": 0.8,
+            "state": "시선 분산 (좌우)"
+        },
+        {
+            "start": 8.2,
+            "end": 10.0,
+            "duration": 1.8,
+            "state": "정면 응시함"
+        },
+        {
+            "start": 10.0,
+            "end": 11.0,
+            "duration": 1.0,
+            "state": "시선 분산 (좌우)"
+        },
+        {
+            "start": 11.6,
+            "end": 14.2,
+            "duration": 2.6,
+            "state": "정면 응시함"
+        }
+    ],
+    "detection_stats": {
+        "face_detected_ratio": 100.0
+    }
+}

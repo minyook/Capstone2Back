@@ -101,13 +101,13 @@ import json
 app = FastAPI(lifespan=lifespan)
 
 # 🌟 필수 디렉토리 확인 및 생성 (RuntimeError 방지)
-for d in ["uploads", "processing/MediaPipe_json", "processing/Yolo_json"]:
+for d in ["uploads", "analysis_json/MediaPipe_json", "analysis_json/Yolo_json"]:
     Path(d).mkdir(parents=True, exist_ok=True)
 
 # 🌟 정적 파일 서버 설정
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
-app.mount("/results/face", StaticFiles(directory="processing/MediaPipe_json"), name="face_results")
-app.mount("/results/gesture", StaticFiles(directory="processing/Yolo_json"), name="gesture_results")
+app.mount("/results/face", StaticFiles(directory="analysis_json/MediaPipe_json"), name="face_results")
+app.mount("/results/gesture", StaticFiles(directory="analysis_json/Yolo_json"), name="gesture_results")
 
 @app.get("/")
 async def read_index():

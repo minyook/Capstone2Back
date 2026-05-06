@@ -1,0 +1,14 @@
+{
+    "total_duration": 14.2,
+    "gesture_analysis_report": [
+        {
+            "start": 0.0,
+            "end": 14.2,
+            "duration": 14.2,
+            "gesture": "기본 자세"
+        }
+    ],
+    "overall_gesture_stats": {
+        "기본 자세": 14.2
+    }
+}

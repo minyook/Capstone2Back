@@ -136,8 +136,10 @@ def analyze_frame_yolo_pose(frame_path: str) -> YoloPoseResult:
     )
 
 def save_gesture_data(all_vision_results: list, frame_rate: int, job_id: str = "default"):
-    """YOLO 데이터를 AI 피드백에 최적화된 구간별 이벤트 형식으로 가공하여 저장합니다."""
+    """UI와 AI 피드백 모두에 최적화된 시계열 데이터를 저장합니다."""
+    time_series_gesture = {}
     processed_events = []
+    
     if not all_vision_results:
         return
 
@@ -145,47 +147,35 @@ def save_gesture_data(all_vision_results: list, frame_rate: int, job_id: str = "
     start_time = 0.0
 
     for i, res in enumerate(all_vision_results):
-        time_s = i / frame_rate
-        gesture = res.yolo.gesture_name
+        seconds = i / frame_rate
+        timestamp_key = f"{seconds:.2f}"
+        yolo = res.yolo
+        
+        # 1. UI용 데이터 구성
+        time_series_gesture[timestamp_key] = {
+            "gesture_name": yolo.gesture_name,
+            "left_hand": yolo.left_hand_state,
+            "right_hand": yolo.right_hand_state,
+            "is_arm_crossed": yolo.is_arm_crossed
+        }
 
-        # 제스처가 바뀌거나 마지막 프레임인 경우 저장
-        if gesture != current_gesture:
+        # 2. AI 피드백용 이벤트 압축 로직
+        if yolo.gesture_name != current_gesture:
             if current_gesture is not None:
-                processed_events.append({
-                    "start": round(start_time, 2),
-                    "end": round(time_s, 2),
-                    "duration": round(time_s - start_time, 2),
-                    "gesture": current_gesture
-                })
-            current_gesture = gesture
-            start_time = time_s
+                processed_events.append({"start": round(start_time, 2), "end": round(seconds, 2), "gesture": current_gesture})
+            current_gesture = yolo.gesture_name
+            start_time = seconds
 
-    # 마지막 구간 추가
-    processed_events.append({
-        "start": round(start_time, 2),
-        "end": round(len(all_vision_results) / frame_rate, 2),
-        "duration": round((len(all_vision_results) / frame_rate) - start_time, 2),
-        "gesture": current_gesture
-    })
-
-    # 제스처 통계 요약 (AI가 선호하는 데이터)
-    gesture_counts = {}
-    for event in processed_events:
-        g = event["gesture"]
-        gesture_counts[g] = gesture_counts.get(g, 0) + event["duration"]
-
-    summary = {
-        "job_id": job_id,
-        "total_duration": round(len(all_vision_results) / frame_rate, 2),
-        "gesture_events": processed_events,
-        "gesture_stats": {k: round(v, 2) for k, v in gesture_counts.items()}
+    # AI 요약 정보 추가
+    time_series_gesture["__AI_SUMMARY__"] = {
+        "events": processed_events
     }
 
-    yolo_out_dir = Path("processing/Yolo_json")
+    yolo_out_dir = Path("analysis_json/Yolo_json")
     yolo_out_dir.mkdir(parents=True, exist_ok=True)
     file_name = f"gesture_results_{job_id}.json"
     with open(yolo_out_dir / file_name, 'w', encoding='utf-8') as f:
-        json.dump(summary, f, indent=4, ensure_ascii=False)
+        json.dump(time_series_gesture, f, indent=4, ensure_ascii=False)
     
-    print(f"   > [데이터 가공] 제스처 분석 결과를 AI용 구간 데이터로 압축 저장 완료.")
+    print(f"   > [UI/AI 통합] 제스처 리포트 저장 완료: {yolo_out_dir / file_name}")
 

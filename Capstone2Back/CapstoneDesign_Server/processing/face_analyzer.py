@@ -149,8 +149,10 @@ def analyze_image(image_input: str | np.ndarray) -> dict:
         return {"error": str(e)}
 
 def save_face_data(all_vision_results: list, frame_rate: int, job_id: str = "default"):
-    """MediaPipe 데이터를 AI 피드백에 최적화된 구간별 이벤트 형식으로 가공하여 저장합니다."""
+    """UI와 AI 피드백 모두에 최적화된 시계열 데이터를 저장합니다."""
+    time_series_face = {}
     processed_events = []
+    
     if not all_vision_results:
         return
 
@@ -158,10 +160,11 @@ def save_face_data(all_vision_results: list, frame_rate: int, job_id: str = "def
     start_time = 0.0
 
     for i, res in enumerate(all_vision_results):
-        time_s = i / frame_rate
+        seconds = i / frame_rate
+        timestamp_key = f"{seconds:.2f}"
         face = res.face
         
-        # 상태 판별 (기존 로직 유지하되 한글 상태명 사용)
+        # 1. 상태 판별 로직
         state = "정면 응시함"
         if not face.has_face:
             state = "얼굴 미검출"
@@ -173,41 +176,38 @@ def save_face_data(all_vision_results: list, frame_rate: int, job_id: str = "def
             state = "시선 분산 (천장)"
         elif face.brow_up > 0.45:
             state = "눈썹 강조 (열정적)"
+        elif face.jaw_open > 0.3 or face.mouth_open > 0.3:
+            state = "말하는 중"
 
-        # 상태가 바뀌거나 마지막 프레임인 경우 저장
+        # 2. UI용 데이터 구성 (핵심만 포함하여 다이어트)
+        # UI는 blendshapes 내의 특정 키를 찾으므로 해당 키들만 유지
+        cats = face.all_blendshapes if face.has_face else {}
+        time_series_face[timestamp_key] = {
+            "info": {"main_state": state},
+            "blendshapes": {
+                "eyeLookInLeft": cats.get("eyeLookInLeft", 0.0),
+                "eyeLookInRight": cats.get("eyeLookInRight", 0.0),
+                "mouthSmileLeft": 0.0 # 사용자 요청으로 미소 제거
+            }
+        }
+
+        # 3. AI 피드백용 이벤트 압축 로직
         if state != current_state:
             if current_state is not None:
-                processed_events.append({
-                    "start": round(start_time, 2),
-                    "end": round(time_s, 2),
-                    "duration": round(time_s - start_time, 2),
-                    "state": current_state
-                })
+                processed_events.append({"start": round(start_time, 2), "end": round(seconds, 2), "state": current_state})
             current_state = state
-            start_time = time_s
+            start_time = seconds
 
-    # 마지막 구간 추가
-    processed_events.append({
-        "start": round(start_time, 2),
-        "end": round(len(all_vision_results) / frame_rate, 2),
-        "duration": round((len(all_vision_results) / frame_rate) - start_time, 2),
-        "state": current_state
-    })
-
-    # AI 피드백용 핵심 요약 데이터 생성
-    summary = {
-        "job_id": job_id,
-        "total_duration": round(len(all_vision_results) / frame_rate, 2),
-        "face_events": processed_events,
-        "stats": {
-            "face_detected_ratio": round(len([r for r in all_vision_results if r.face.has_face]) / len(all_vision_results) * 100, 1)
-        }
+    # AI 요약 정보 추가 (UI 로직에 방해되지 않도록 특수 키 사용)
+    time_series_face["__AI_SUMMARY__"] = {
+        "events": processed_events,
+        "detection_ratio": round(len([r for r in all_vision_results if r.face.has_face]) / len(all_vision_results) * 100, 1)
     }
 
-    face_out_dir = Path("processing/MediaPipe_json")
+    face_out_dir = Path("analysis_json/MediaPipe_json")
     face_out_dir.mkdir(parents=True, exist_ok=True)
     file_name = f"face_results_{job_id}.json"
     with open(face_out_dir / file_name, 'w', encoding='utf-8') as f:
-        json.dump(summary, f, indent=4, ensure_ascii=False)
+        json.dump(time_series_face, f, indent=4, ensure_ascii=False)
     
-    print(f"   > [데이터 가공] 얼굴 분석 결과를 AI용 구간 데이터로 압축 저장 완료.")
+    print(f"   > [UI/AI 통합] 시선/표정 리포트 저장 완료: {face_out_dir / file_name}")

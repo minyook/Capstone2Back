@@ -148,10 +148,10 @@ def run_analysis_task(job_id: str, video_path: Path, frame_dir: Path, video_dir:
         # 7. AI 피드백 생성 (FeedbackEngine 사용)
         from core.feedback_engine import feedback_engine
         
-        # 관련 JSON 파일 경로 수집
+        # 관련 JSON 파일 경로 수집 (새로운 analysis_json 경로 적용)
         json_paths = {
-            "face": Path("processing/MediaPipe_json/final_time_series.json"),
-            "gesture": Path("processing/Yolo_json/gesture_time_series.json"),
+            "face": Path(f"analysis_json/MediaPipe_json/face_results_{job_id}.json"),
+            "gesture": Path(f"analysis_json/Yolo_json/gesture_results_{job_id}.json"),
             "ppt": None
         }
         

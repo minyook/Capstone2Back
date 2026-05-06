@@ -52,29 +52,30 @@ class FeedbackEngine:
             except Exception as e:
                 print(f"⚠️ PPT JSON 로드 실패: {e}")
 
-        # 2. MediaPipe 구간 데이터 로드 (가공됨)
+        # 2. MediaPipe 구간 데이터 로드 (정제됨)
         face_path = paths.get("face")
         if face_path and face_path.exists():
             try:
                 with open(face_path, 'r', encoding='utf-8') as f:
-                    face_data = json.load(f)
-                    # 전체 구간 데이터와 통계 포함
+                    data = json.load(f)
+                    summary = data.get("__AI_SUMMARY__", {})
                     detailed["face_analysis"] = {
-                        "events": face_data.get("face_events", []),
-                        "stats": face_data.get("stats", {})
+                        "events": summary.get("events", []),
+                        "stats": {"face_detected_ratio": summary.get("detection_ratio", 0)}
                     }
             except Exception as e:
                 print(f"⚠️ Face JSON 로드 실패: {e}")
 
-        # 3. YOLO 구간 데이터 로드 (가공됨)
+        # 3. YOLO 구간 데이터 로드 (정제됨)
         gesture_path = paths.get("gesture")
         if gesture_path and gesture_path.exists():
             try:
                 with open(gesture_path, 'r', encoding='utf-8') as f:
-                    gesture_data = json.load(f)
+                    data = json.load(f)
+                    summary = data.get("__AI_SUMMARY__", {})
                     detailed["gesture_analysis"] = {
-                        "events": gesture_data.get("gesture_events", []),
-                        "stats": gesture_data.get("gesture_stats", {})
+                        "events": summary.get("events", []),
+                        "stats": {} # 필요시 추가
                     }
             except Exception as e:
                 print(f"⚠️ Gesture JSON 로드 실패: {e}")
