@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
             test_path = Path(args.test_video)
             if test_path.exists():
                 print(f"🚀 [자동 분석 모드] '{test_path.name}' 분석을 즉시 시작합니다...")
-                # 발표용이므로 별도 백그라운드 없이 직접 실행
+                # 백그라운드 없이 직접 실행
                 run_analysis_task("AUTO_DEMO", test_path, Path("frames"), Path("uploads"), [])
             else:
                 print(f"❌ 자동 분석 실패: {test_path} 파일을 찾을 수 없습니다.")

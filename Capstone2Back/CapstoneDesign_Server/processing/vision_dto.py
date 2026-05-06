@@ -8,12 +8,19 @@ from typing import Any, Optional
 class YoloPoseResult:
     """
     YOLO (pose) 전용 결과.
-    - 사람 존재/가시성 신호만 포함
+    - 사람 존재/가시성 및 상세 제스처 정보 포함
     """
 
     has_person: bool
     has_pelvis: bool
     has_ankles: bool
+    # 🌟 추가: 제스처 분석 데이터
+    gesture_name: str = "Unknown"  # 현재 프레임의 대표 제스처 이름
+    left_hand_state: str = "Low"    # High, Middle, Low
+    right_hand_state: str = "Low"
+    is_arm_crossed: bool = False
+    body_tilt: float = 0.0          # 몸의 기울기 (정면 기준)
+    keypoints: list[list[float]] = field(default_factory=list) # 시각화용 원본 좌표 (선택사항)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

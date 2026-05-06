@@ -57,6 +57,21 @@ def run_analysis_task(job_id: str, video_path: Path, frame_dir: Path, video_dir:
             
         print(f"   > ✅ 시각 데이터 추출 완료.")
 
+        # 🌟 [시각화 체크용] 첫 번째 프레임의 분석 결과를 이미지로 저장
+        if all_vision_results and frame_paths:
+            import cv2
+            debug_frame = cv2.imread(str(frame_paths[0]))
+            y_res = all_vision_results[0].yolo
+            # 제스처 이름 그리기
+            cv2.putText(debug_frame, f"Gesture: {y_res.gesture_name}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            cv2.putText(debug_frame, f"L-Hand: {y_res.left_hand_state}", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            cv2.putText(debug_frame, f"R-Hand: {y_res.right_hand_state}", (50, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            
+            check_dir = Path("out/aa/testopen")
+            check_dir.mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(check_dir / "yolo_check.jpg"), debug_frame)
+            print(f"   > 🖼️ [시각화 체크] 분석 샘플 이미지가 저장되었습니다: {check_dir / 'yolo_check.jpg'}")
+
         # 4 & 5. Whisper 및 Praat 음성 분석
         job_status[job_id] = {"status": "Analyzing", "message": "4/6: 로컬 음성 인식 실행 중..."}
         audio_segments, whisper_error = transcribe_audio_with_timestamps(str(audio_path))
@@ -94,17 +109,18 @@ def run_analysis_task(job_id: str, video_path: Path, frame_dir: Path, video_dir:
         print(llama_feedback)
 
         # ==========================================
-        # 🌟 [신규 추가] 시간대별 상세 좌표 통합 JSON 저장 (요청 포맷 반영)
+        # 🌟 [신규 추가] 시간대별 상세 좌표 통합 JSON 저장 (MediaPipe & YOLO)
         # ==========================================
-        time_series_detail = {}
+        time_series_face = {}
+        time_series_gesture = {}
+
         for i, res in enumerate(all_vision_results):
-            # 1. 00:00:00.00 형식의 타임스탬프 계산
             seconds = i / FRAME_RATE
             mins, secs = divmod(seconds, 60)
             hours, mins = divmod(mins, 60)
             timestamp_key = f"{int(hours):02d}:{int(mins):02d}:{int(secs):02d}.{int((seconds % 1) * 100):02d}"
             
-            # 2. 메인 상태(main_state) 판별 로직
+            # 1. MediaPipe 얼굴 데이터 정렬
             main_state = "정면 응시 / 진지함"
             if res.face.has_face:
                 if res.face.smile > 0.5: main_state = "미소 감지"
@@ -114,27 +130,38 @@ def run_analysis_task(job_id: str, video_path: Path, frame_dir: Path, video_dir:
             else:
                 main_state = "얼굴 미검출"
             
-            # 3. MediaPipe 52개 상세 좌표 추출
             face_data = res.face.to_dict()
-            blendshapes = face_data.get("all_blendshapes", {})
-
-            time_series_detail[timestamp_key] = {
-                "info": {
-                    "frame_index": i,
-                    "main_state": main_state
-                },
-                "blendshapes": blendshapes
+            time_series_face[timestamp_key] = {
+                "info": {"frame_index": i, "main_state": main_state},
+                "blendshapes": face_data.get("all_blendshapes", {})
             }
 
-        # 파일 저장 (MediaPipe_json 폴더 내)
-        json_out_dir = Path("processing/MediaPipe_json")
-        json_out_dir.mkdir(parents=True, exist_ok=True)
-        final_json_path = json_out_dir / "final_time_series.json"
+            # 2. YOLO 제스처 데이터 정렬
+            yolo_data = res.yolo.to_dict()
+            time_series_gesture[timestamp_key] = {
+                "gesture_name": yolo_data["gesture_name"],
+                "left_hand": yolo_data["left_hand_state"],
+                "right_hand": yolo_data["right_hand_state"],
+                "is_arm_crossed": yolo_data["is_arm_crossed"],
+                "body_tilt": yolo_data["body_tilt"],
+                "keypoints": yolo_data["keypoints"] # 프론트엔드 시각화용
+            }
+
+        # MediaPipe JSON 저장
+        face_out_dir = Path("processing/MediaPipe_json")
+        face_out_dir.mkdir(parents=True, exist_ok=True)
+        with open(face_out_dir / "final_time_series.json", 'w', encoding='utf-8') as f:
+            json.dump(time_series_face, f, indent=4, ensure_ascii=False)
         
-        with open(final_json_path, 'w', encoding='utf-8') as f:
-            json.dump(time_series_detail, f, indent=4, ensure_ascii=False)
+        # YOLO JSON 저장 (요청사항)
+        yolo_out_dir = Path("processing/Yolo_json")
+        yolo_out_dir.mkdir(parents=True, exist_ok=True)
+        with open(yolo_out_dir / "gesture_time_series.json", 'w', encoding='utf-8') as f:
+            json.dump(time_series_gesture, f, indent=4, ensure_ascii=False)
         
-        print(f"\n✨ [분석 완료] 시계열 통합 데이터 저장됨: {final_json_path}")
+        print(f"\n✨ [분석 완료] 시계열 통합 데이터 저장됨:")
+        print(f"   > MediaPipe: {face_out_dir / 'final_time_series.json'}")
+        print(f"   > YOLO: {yolo_out_dir / 'gesture_time_series.json'}")
         # ==========================================
 
         raw_data_json = [f.to_dict() for f in all_vision_results]
