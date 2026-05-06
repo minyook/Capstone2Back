@@ -1,5 +1,6 @@
 import os
 import uvicorn
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 import uuid 
 import asyncio
 from pathlib import Path
@@ -22,8 +23,9 @@ from processing.task_manager import run_analysis_task, job_status
 
 # 🌟 신규 임포트
 from core.exceptions import QualityException
-# 🌟 챗봇 함수 임포트
-from core.llama_client import chat_with_mentor
+# 🌟 챗봇 함수 임포트 (Gemini로 교체)
+from core.gemini_client import chat_with_gemini, stream_chat_with_gemini
+from fastapi.responses import StreamingResponse
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -94,12 +96,53 @@ def chat_with_ai(request: ChatRequest):
     print(f"\n[📱 프론트엔드에서 온 메시지]: {request.message}")
     
     # 챗봇 AI에게 메시지와 기록을 던져서 답변 생성
-    updated_history = chat_with_mentor(request.message, request.chat_history)
+    updated_history = chat_with_gemini(request.message, request.chat_history)
     
     print(f"[🤖 챗봇 AI의 답변]: {updated_history[-1]['content']}\n")
     
     # 업데이트된 전체 대화 기록을 프론트엔드로 다시 반환
     return {"chat_history": updated_history}
+
+from fastapi import FastAPI, BackgroundTasks, UploadFile, File, Form
+from fastapi.responses import JSONResponse, StreamingResponse
+
+# ... (기타 임포트 생략)
+
+@app.post("/api/chat/with-file")
+async def chat_with_ai_file(
+    message: str = Form(...),
+    chat_history: str = Form(...),
+    file: UploadFile = File(...)
+):
+    """
+    파일과 메시지를 함께 받아 처리하는 챗봇 API입니다.
+    """
+    import json
+    history = json.loads(chat_history)
+    
+    print(f"\n[📱 파일 첨부 메시지]: {message}")
+    print(f"[📎 첨부 파일]: {file.filename}")
+
+    # 파일 저장 로직 (필요시)
+    # await save_upload_file(file, Path("uploads") / file.filename)
+
+    # Gemini 답변 생성 (파일 정보 포함)
+    full_message = f"[첨부 파일: {file.filename}]\n\n{message}"
+    updated_history = chat_with_gemini(full_message, history)
+    
+    return {"chat_history": updated_history}
+
+@app.post("/api/chat/stream")
+async def chat_with_ai_stream(request: ChatRequest):
+    """
+    Gemini 스트리밍 답변을 반환하는 API입니다.
+    """
+    print(f"\n[📱 프론트엔드에서 온 메시지 (스트림)]: {request.message}")
+    
+    return StreamingResponse(
+        stream_chat_with_gemini(request.message, request.chat_history),
+        media_type="text-event-stream"
+    )
 
 # ==========================================
 # 기존 코드 (예외 처리 및 서버 실행)

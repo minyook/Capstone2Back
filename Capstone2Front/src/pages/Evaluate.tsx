@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Link, useNavigate } from "react-router-dom";
 
 import { useFolders } from "../context/FoldersContext";
+import { registerFolderFiles } from "../data/folderFilesStorage";
 
 import "./Evaluate.css";
 
@@ -26,6 +27,134 @@ export function Evaluate() {
 
   const [videoName, setVideoName] = useState<string | null>(null);
 
+  const [isRecording, setIsRecording] = useState(false);
+
+  const [cameraError, setCameraError] = useState<string>("");
+
+  const [recordedVideoUrl, setRecordedVideoUrl] = useState<string | null>(null);
+
+  const [recordedVideoName, setRecordedVideoName] = useState<string | null>(null);
+
+  const [selectedVideoPreviewUrl, setSelectedVideoPreviewUrl] = useState<string | null>(null);
+
+  const previewRef = useRef<HTMLVideoElement | null>(null);
+
+  const streamRef = useRef<MediaStream | null>(null);
+
+  const recorderRef = useRef<MediaRecorder | null>(null);
+
+  const chunksRef = useRef<Blob[]>([]);
+
+  useEffect(() => {
+    return () => {
+      if (recorderRef.current && recorderRef.current.state !== "inactive") {
+        recorderRef.current.stop();
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+      if (recordedVideoUrl) {
+        URL.revokeObjectURL(recordedVideoUrl);
+      }
+    };
+  }, [recordedVideoUrl]);
+
+  useEffect(() => {
+    const videoEl = previewRef.current;
+    const stream = streamRef.current;
+    if (!videoEl || !stream) return;
+    videoEl.srcObject = stream;
+    videoEl.play().catch(() => {
+      // autoplay 정책으로 인해 실패할 수 있어 무시 (사용자 상호작용 후 재생됨)
+    });
+  }, [isRecording]);
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (previewRef.current) {
+      previewRef.current.srcObject = null;
+    }
+  };
+
+  const handleRecordToggle = async () => {
+    if (isRecording) {
+      recorderRef.current?.stop();
+      return;
+    }
+
+    setCameraError("");
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError("이 브라우저는 카메라 접근을 지원하지 않습니다.");
+      return;
+    }
+
+    if (typeof MediaRecorder === "undefined") {
+      setCameraError("이 브라우저는 녹화(MediaRecorder)를 지원하지 않습니다.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
+      streamRef.current = stream;
+
+      const recorder = new MediaRecorder(stream);
+      recorderRef.current = recorder;
+      chunksRef.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        setIsRecording(false);
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "video/webm" });
+        const ext = blob.type.includes("mp4") ? "mp4" : "webm";
+        const stampedName = `recorded-${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
+        setRecordedVideoName(stampedName);
+
+        if (recordedVideoUrl) {
+          URL.revokeObjectURL(recordedVideoUrl);
+        }
+        const url = URL.createObjectURL(blob);
+        setRecordedVideoUrl(url);
+        stopCamera();
+      };
+
+      recorder.start();
+      setIsRecording(true);
+    } catch (error) {
+      console.error(error);
+      setCameraError("카메라/마이크 권한이 없거나 장치에 접근할 수 없습니다.");
+      stopCamera();
+    }
+  };
+
+  const handleSelectRecordedVideo = () => {
+    if (!recordedVideoName || !recordedVideoUrl) return;
+    setVideoName(recordedVideoName);
+    setSelectedVideoPreviewUrl(recordedVideoUrl);
+    setStep((s) => (s < 3 ? 3 : s));
+    setCameraError("");
+  };
+
+  const handleRetakeRecordedVideo = () => {
+    if (recordedVideoUrl) {
+      URL.revokeObjectURL(recordedVideoUrl);
+    }
+    setRecordedVideoUrl(null);
+    setRecordedVideoName(null);
+    setCameraError("");
+  };
+
 
 
   const hasFolders = folders.length > 0;
@@ -46,11 +175,9 @@ export function Evaluate() {
 
         <p className="evaluate-lead">
 
-          계획서 기준으로 <strong>Whisper STT</strong>로 발화를 텍스트화하고, <strong>MediaPipe</strong> 등 비전
+          발표 음성은 글자로 옮겨 내용을 보고, 영상에서는 시선·제스처·표정을 함께 봅니다. <strong>저장 폴더</strong>를 고른
 
-          모듈로 시선·제스처·표정을 분석합니다. <strong>저장 폴더</strong>를 고른 뒤 PPT와 영상을 올리면 항목별 점수와
-
-          PDF·Excel 리포트로 이어집니다.
+          뒤 PPT와 영상을 올리면 항목별 점수와 PDF·Excel 리포트로 이어집니다.
 
         </p>
 
@@ -248,18 +375,36 @@ export function Evaluate() {
 
           </p>
 
-          <div className="evaluate-preview" role="region" aria-label="카메라 미리보기 (연동 예정)">
-
-            카메라 프리뷰 · 녹화는 백엔드·브라우저 권한 연동 후 활성화
-
+          <div className="evaluate-preview" role="region" aria-label="카메라 미리보기">
+            {recordedVideoUrl && !isRecording ? (
+              <video className="evaluate-preview__video" src={recordedVideoUrl} controls playsInline />
+            ) : (
+              <>
+                <video ref={previewRef} className="evaluate-preview__video" autoPlay muted playsInline />
+                {!isRecording ? (
+                  <p className="evaluate-preview__placeholder">
+                    녹화 시작을 누르면 카메라 미리보기가 켜집니다. 기존 파일을 쓸 경우 아래에서 영상 파일을 선택해 주세요.
+                  </p>
+                ) : null}
+              </>
+            )}
           </div>
+          {recordedVideoUrl && !isRecording ? (
+            <div className="evaluate-preview-actions">
+              <button type="button" className="evaluate-btn evaluate-btn--secondary" onClick={handleRetakeRecordedVideo}>
+                다시 찍기
+              </button>
+              <button type="button" className="evaluate-btn evaluate-btn--primary" onClick={handleSelectRecordedVideo}>
+                이 영상 선택하기
+              </button>
+            </div>
+          ) : null}
+          {cameraError ? <p className="evaluate-note evaluate-note--error">{cameraError}</p> : null}
 
           <div className="evaluate-row">
 
-            <button type="button" className="evaluate-btn evaluate-btn--secondary">
-
-              녹화 시작
-
+            <button type="button" className="evaluate-btn evaluate-btn--secondary" onClick={handleRecordToggle}>
+              {isRecording ? "녹화 중지" : "녹화 시작"}
             </button>
 
             <label className="evaluate-btn evaluate-btn--ghost">
@@ -279,6 +424,9 @@ export function Evaluate() {
                   const f = e.target.files?.[0];
 
                   setVideoName(f?.name ?? null);
+                  if (f) {
+                    setSelectedVideoPreviewUrl(URL.createObjectURL(f));
+                  }
 
                   if (f) setStep((s) => (s < 3 ? 3 : s));
 
@@ -326,7 +474,24 @@ export function Evaluate() {
 
             disabled={!canAnalyze}
 
-            onClick={() => navigate("/analysis")}
+            onClick={() => {
+              const submission = registerFolderFiles(folderId, { pptName, videoName });
+              if (submission && selectedVideoPreviewUrl) {
+                try {
+                  const raw = sessionStorage.getItem("overnight-video-preview-by-submission-v1");
+                  const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+                  map[submission.id] = selectedVideoPreviewUrl;
+                  sessionStorage.setItem("overnight-video-preview-by-submission-v1", JSON.stringify(map));
+                } catch {
+                  /* ignore */
+                }
+              }
+              navigate(
+                submission
+                  ? `/analysis?submissionId=${encodeURIComponent(submission.id)}`
+                  : "/analysis"
+              );
+            }}
 
           >
 
@@ -352,7 +517,7 @@ export function Evaluate() {
 
               ※ <strong>폴더</strong>, PPT, 영상을 모두 준비하면 채점을 시작할 수 있습니다. 폴더 목록은 문서 화면과
 
-              동일하게 이 브라우저에 저장됩니다.
+              문서 화면과 같이 이 기기에만 저장됩니다.
 
             </p>
 
