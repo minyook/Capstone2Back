@@ -3,10 +3,11 @@ import uvicorn
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 import uuid 
 import asyncio
+import importlib.util
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, BackgroundTasks
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, BackgroundTasks, UploadFile, File, Form, HTTPException
+from fastapi.responses import JSONResponse, StreamingResponse
 import argparse
 import sys
 
@@ -25,9 +26,33 @@ from processing.task_manager import run_analysis_task, job_status
 from core.exceptions import QualityException
 # 🌟 챗봇 함수 임포트 (Gemini로 교체)
 from core.gemini_client import chat_with_gemini, stream_chat_with_gemini
-from fastapi.responses import StreamingResponse
 
 BASE_DIR = Path(__file__).resolve().parent
+PPT_ENGINE_DIR = BASE_DIR / "ppt-analysis-engine"
+PPT_UPLOAD_DIR = PPT_ENGINE_DIR / "data" / "uploads"
+_PPT_ANALYZE_FUNC = None
+
+def _get_ppt_analyze_func():
+    global _PPT_ANALYZE_FUNC
+    if _PPT_ANALYZE_FUNC is not None:
+        return _PPT_ANALYZE_FUNC
+
+    engine_root = str(PPT_ENGINE_DIR.resolve())
+    if engine_root not in sys.path:
+        sys.path.insert(0, engine_root)
+
+    module_path = PPT_ENGINE_DIR / "main.py"
+    spec = importlib.util.spec_from_file_location("ppt_analysis_engine_main", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("PPT 분석 엔진 모듈 로드에 실패했습니다.")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    analyze_func = getattr(module, "analyze_ppt_file", None)
+    if analyze_func is None:
+        raise RuntimeError("analyze_ppt_file 함수를 찾을 수 없습니다.")
+    _PPT_ANALYZE_FUNC = analyze_func
+    return _PPT_ANALYZE_FUNC
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -103,11 +128,6 @@ def chat_with_ai(request: ChatRequest):
     # 업데이트된 전체 대화 기록을 프론트엔드로 다시 반환
     return {"chat_history": updated_history}
 
-from fastapi import FastAPI, BackgroundTasks, UploadFile, File, Form
-from fastapi.responses import JSONResponse, StreamingResponse
-
-# ... (기타 임포트 생략)
-
 @app.post("/api/chat/with-file")
 async def chat_with_ai_file(
     message: str = Form(...),
@@ -131,6 +151,31 @@ async def chat_with_ai_file(
     updated_history = chat_with_gemini(full_message, history)
     
     return {"chat_history": updated_history}
+
+@app.post("/api/ppt/analyze")
+async def analyze_ppt(file: UploadFile = File(...)):
+    file_name = file.filename or ""
+    ext = Path(file_name).suffix.lower()
+    if ext not in {".ppt", ".pptx"}:
+        raise HTTPException(status_code=400, detail="PPT 또는 PPTX 파일만 업로드할 수 있습니다.")
+
+    PPT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    saved_name = f"{uuid.uuid4().hex}_{Path(file_name).name}"
+    saved_path = PPT_UPLOAD_DIR / saved_name
+
+    try:
+        save_upload_file(file, saved_path)
+        analyze_ppt_file = _get_ppt_analyze_func()
+        result = analyze_ppt_file(saved_path)
+        return {
+            "status": "ok",
+            "uploaded_file": saved_name,
+            "result_path": result.get("result_path"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PPT 분석 실패: {e}") from e
 
 @app.post("/api/chat/stream")
 async def chat_with_ai_stream(request: ChatRequest):
