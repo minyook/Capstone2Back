@@ -25,7 +25,7 @@ from processing.task_manager import run_analysis_task, job_status
 # 🌟 신규 임포트
 from core.exceptions import QualityException
 # 🌟 챗봇 함수 임포트 (Gemini로 교체)
-from core.gemini_client import chat_with_gemini, stream_chat_with_gemini
+from core.gemini_client import chat_with_gemini, stream_chat_with_gemini, upload_to_gemini
 
 BASE_DIR = Path(__file__).resolve().parent
 PPT_ENGINE_DIR = BASE_DIR / "ppt-analysis-engine"
@@ -136,20 +136,29 @@ async def chat_with_ai_file(
     file: UploadFile = File(...)
 ):
     """
-    파일과 메시지를 함께 받아 처리하는 챗봇 API입니다.
+    파일과 메시지를 함께 받아 Gemini Files API를 통해 실시간으로 처리하는 챗봇 API입니다.
     """
     import json
+    import shutil
     history = json.loads(chat_history)
     
     print(f"\n[📱 파일 첨부 메시지]: {message}")
     print(f"[📎 첨부 파일]: {file.filename}")
 
-    # 파일 저장 로직 (필요시)
-    # await save_upload_file(file, Path("uploads") / file.filename)
+    # 1. 파일을 임시 폴더에 저장
+    temp_path = BASE_DIR / "uploads" / file.filename
+    temp_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(temp_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
 
-    # Gemini 답변 생성 (파일 정보 포함)
-    full_message = f"[첨부 파일: {file.filename}]\n\n{message}"
-    updated_history = chat_with_gemini(full_message, history)
+    # 2. Gemini Files API로 업로드 및 분석
+    gemini_file = upload_to_gemini(str(temp_path), mime_type=file.content_type)
+    
+    if not gemini_file:
+        return JSONResponse(status_code=500, content={"message": "Gemini 파일 업로드 실패"})
+
+    # 3. Gemini 답변 생성 (파일 객체 포함)
+    updated_history = chat_with_gemini(message, history, attachments=[gemini_file])
     
     return {"chat_history": updated_history}
 
